@@ -2,63 +2,150 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Bit Style Messaging App</title>
     <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
     <style>
         body {
-            background: #222;
-            color: #0ff;
-            font-family: 'Press Start 2P', monospace;
+            background: #000;
+            color: #00FF00;
+            font-family: monospace;
             margin: 0;
             padding: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
             height: 100vh;
+            overflow: hidden;
         }
-        .chat-container {
-            background: #111;
-            border: 4px solid #0ff;
-            border-radius: 8px;
-            width: 350px;
-            margin-top: 40px;
-            box-shadow: 0 0 16px #0ff;
+                .chat-container {
+            background: #000;
+            border: 2px solid #00FF00;
+            width: 100vw;
+            height: 100vh;
             display: flex;
             flex-direction: column;
-            height: 500px;
+            border-radius: 0;
         }
         .messages {
             flex: 1;
             overflow-y: auto;
-            padding: 16px;
-            font-size: 12px;
+            padding: 12px;
+            font-size: 11px;
+            background: #000;
+            color: #00FF00;
+            border-bottom: 1px solid #00FF00;
         }
         .input-area {
+            --control-height: 56px;
             display: flex;
-            border-top: 2px solid #0ff;
-            padding: 8px;
+            align-items: center;
+            gap: 12px;
+            border-top: 1px solid #00FF00;
+            padding: 12px;
+            background: #000;
+            position: relative;
         }
-        input, button {
-            font-family: 'Press Start 2P', monospace;
-            font-size: 12px;
-            background: #222;
-            color: #0ff;
-            border: 2px solid #0ff;
-            border-radius: 4px;
-            padding: 4px 8px;
-            margin-right: 8px;
+        input {
+            font-family: monospace;
+            font-size: 13px;
+            background: #000;
+            color: #00FF00;
+            border: 1px solid #00FF00;
+            border-radius: 0;
+            padding: 12px 16px;
+            margin: 0;
+            outline: none;
+            box-sizing: border-box;
+            flex: 1 1 auto;
+            height: var(--control-height);
+            line-height: 1;
+            min-height: 44px;
+            touch-action: manipulation;
         }
         button {
+            font-family: monospace;
+            font-size: 13px;
+            background: #000;
+            color: #00FF00;
+            border: 1px solid #00FF00;
+            border-radius: 0;
+            padding: 0 24px;
+            margin: 0;
             cursor: pointer;
+            transition: background 0.1s;
+            box-sizing: border-box;
+            height: var(--control-height);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+            min-height: 44px;
+            touch-action: manipulation;
+        }
+        button:hover {
+            background: #00FF00;
+            color: #000;
         }
         .login {
-            margin-top: 80px;
-            background: #111;
-            border: 4px solid #0ff;
-            border-radius: 8px;
-            padding: 24px;
-            box-shadow: 0 0 16px #0ff;
+            margin: 20px auto;
+            background: #000;
+            border: 2px solid #00FF00;
+            border-radius: 0;
+            padding: 16px;
+            color: #00FF00;
+            width: 90vw;
+            max-width: 350px;
+        }
+        .pixel-btn {
+            font-family: monospace;
+            font-size: 13px;
+            background: #000;
+            color: #00FF00;
+            border: 1px solid #00FF00;
+            border-radius: 0;
+            padding: 16px 32px;
+            margin-top: 16px;
+            cursor: pointer;
+            image-rendering: pixelated;
+            min-height: 44px;
+            width: 100%;
+            box-sizing: border-box;
+            touch-action: manipulation;
+        }
+        .pixel-btn:active {
+            background: #00FF00;
+            color: #000;
+        }
+        .pixel-input {
+            font-family: monospace;
+            font-size: 13px;
+            background: #000;
+            color: #00FF00;
+            border: 1px solid #00FF00;
+            border-radius: 0;
+            padding: 16px 12px;
+            margin-bottom: 12px;
+            width: 100%;
+            box-sizing: border-box;
+            image-rendering: pixelated;
+            min-height: 44px;
+            touch-action: manipulation;
+        }
+        .messages div {
+            margin-bottom: 12px;
+            padding: 4px 8px;
+            background: #191970;
+            border: 2px solid #FFD700;
+            color: #FFD700;
+            box-shadow: 2px 2px #8B008B;
+            font-size: 13px;
+            border-radius: 0;
+            display: inline-block;
+        }
+        .messages div strong {
+            color: #00FFFF;
+            margin-right: 8px;
         }
     </style>
     <script src="https://cdn.jsdelivr.net/npm/crypto-js@4.1.1/crypto-js.min.js"></script>
@@ -66,10 +153,12 @@
 </head>
 <body>
     <div class="login" id="login">
-        <h2>Login</h2>
-        <input type="text" id="username" placeholder="Enter your name" />
-        <input type="password" id="roomkey" placeholder="Room Key" />
-        <button onclick="login()">Enter</button>
+            <div style="text-align:center;margin-bottom:20px;">
+                <canvas id="banner" width="280" height="48" style="display:block;margin:0 auto;"></canvas>
+            </div>
+            <input type="text" id="username" placeholder="Username" class="pixel-input" />
+            <input type="password" id="roomkey" placeholder="Key" class="pixel-input" />
+            <button onclick="login()" class="pixel-btn">Login</button>
     </div>
     <div class="chat-container" id="chat" style="display:none;">
         <div class="messages" id="messages"></div>
@@ -78,11 +167,43 @@
             <button onclick="sendMessage()">Send</button>
         </div>
     </div>
-    <script>
-        let username = '';
-        let roomkey = '';
-        let socket;
+        <script>
+        // Focus the message input when the window loads
+        window.onload = function() {
+            document.getElementById('messageInput').focus();
+        };
+        // Enable login by pressing Enter in either input field
+        document.addEventListener('DOMContentLoaded', function() {
+            const usernameInput = document.getElementById('username');
+            const roomkeyInput = document.getElementById('roomkey');
+            usernameInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+            roomkeyInput.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    login();
+                }
+            });
+        });
 
+        // Draw pixel-art BitChat banner
+        window.addEventListener('DOMContentLoaded', function() {
+            var canvas = document.getElementById('banner');
+            if (canvas) {
+                var ctx = canvas.getContext('2d');
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.font = '24px monospace';
+                ctx.fillStyle = '#00FF00';
+                ctx.fillText('BitChat', 18, 36);
+                // Simple border
+                ctx.strokeStyle = '#00FF00';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(0, 0, canvas.width, canvas.height);
+            }
+        });
         function login() {
             username = document.getElementById('username').value.trim();
             roomkey = document.getElementById('roomkey').value.trim();
@@ -90,6 +211,9 @@
                 document.getElementById('login').style.display = 'none';
                 document.getElementById('chat').style.display = 'flex';
                 connectSocket();
+                setTimeout(function() {
+                    document.getElementById('messageInput').focus();
+                }, 100);
             }
         }
 
@@ -98,11 +222,43 @@
             socket.emit('join', { username });
             socket.on('message', function(data) {
                 const decrypted = CryptoJS.AES.decrypt(data.text, roomkey).toString(CryptoJS.enc.Utf8);
-                addMessage(data.username, decrypted);
+                addMessage(data.username, decrypted, data.timestamp);
             });
             socket.on('status', function(data) {
                 addMessage('System', data.msg);
             });
+        }
+
+        // Send message when Enter is pressed
+        document.addEventListener('DOMContentLoaded', function() {
+            const input = document.getElementById('messageInput');
+            input.addEventListener('keydown', function(e) {
+                if (e.key === 'Enter') {
+                    sendMessage();
+                }
+            });
+        });
+
+        function getUserColor(name) {
+            const colors = ['#00FF00', '#00CC00', '#009900', '#00AA00', '#008800', '#00DD00'];
+            let hash = 0;
+            for (let i = 0; i < name.length; i++) hash += name.charCodeAt(i);
+            return colors[hash % colors.length];
+        }
+
+        function formatTimestamp(ts) {
+            if (!ts) return '';
+            const d = new Date(ts);
+            return `${d.getHours().toString().padStart(2,'0')}:${d.getMinutes().toString().padStart(2,'0')}`;
+        }
+
+        function addMessage(user, text, timestamp) {
+            const messages = document.getElementById('messages');
+            const div = document.createElement('div');
+            const color = getUserColor(user);
+            div.innerHTML = `<span style="display:inline-block;width:16px;height:16px;background:${color};border-radius:3px;margin-right:6px;"></span><strong>${user}</strong> <span style="color:#aaa;font-size:10px;">${formatTimestamp(timestamp)}</span>: ${text}`;
+            messages.appendChild(div);
+            messages.scrollTop = messages.scrollHeight;
         }
 
         function sendMessage() {
@@ -110,18 +266,11 @@
             const text = input.value.trim();
             if (text && socket) {
                 const encrypted = CryptoJS.AES.encrypt(text, roomkey).toString();
-                socket.emit('message', { username, text: encrypted });
-                addMessage(username, text);
+                const now = Date.now();
+                socket.emit('message', { username, text: encrypted, timestamp: now });
+                // Do not call addMessage here; wait for server broadcast
                 input.value = '';
             }
-        }
-
-        function addMessage(user, text) {
-            const messages = document.getElementById('messages');
-            const div = document.createElement('div');
-            div.innerHTML = `<strong>${user}:</strong> ${text}`;
-            messages.appendChild(div);
-            messages.scrollTop = messages.scrollHeight;
         }
     </script>
 </body>

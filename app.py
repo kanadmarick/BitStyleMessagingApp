@@ -108,8 +108,10 @@ def handle_message(data):
     encrypted = data.get('encrypted')
     timestamp = data.get('timestamp')
     username = data.get('username')
-    if encrypted and timestamp and username:
-        save_message(username, encrypted, timestamp)
+    if not (encrypted and timestamp and username):
+        emit('status', {'msg': 'Invalid message: missing fields.'}, room=sid)
+        return
+    save_message(username, encrypted, timestamp)
     emit('message', data, room=room)
 
 if __name__ == '__main__':

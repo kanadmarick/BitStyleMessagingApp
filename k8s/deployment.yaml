@@ -1,0 +1,99 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: messaging-app
+  namespace: messaging-app
+  labels:
+    app: messaging-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: messaging-app
+  template:
+    metadata:
+      labels:
+        app: messaging-app
+    spec:
+      containers:
+      - name: messaging-app
+        image: gcr.io/PROJECT_ID/messaging-app:latest
+        ports:
+        - containerPort: 5000
+        env:
+        - name: PORT
+          value: "5000"
+        - name: FLASK_ENV
+          value: "production"
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "50m"
+          limits:
+            memory: "128Mi"
+            cpu: "100m"
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: app-data
+          mountPath: /app/data
+      volumes:
+      - name: app-data
+        emptyDir: {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: messaging-app-service
+  namespace: messaging-app
+  labels:
+    app: messaging-app
+spec:
+  selector:
+    app: messaging-app
+  ports:
+  - protocol: TCP
+    port: 80
+    targetPort: 5000
+  type: ClusterIP
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: messaging-app-ingress
+  namespace: messaging-app
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    nginx.ingress.kubernetes.io/rewrite-target: /
+    nginx.ingress.kubernetes.io/ssl-redirect: "false"
+spec:
+  rules:
+  - host: messaging-app.local
+    http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: messaging-app-service
+            port:
+              number: 80
+  - http:
+      paths:
+      - path: /
+        pathType: Prefix
+        backend:
+          service:
+            name: messaging-app-service
+            port:
+              number: 80

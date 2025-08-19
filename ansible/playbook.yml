@@ -1,0 +1,194 @@
+---
+# Ansible playbook for system updates and Kubernetes setup
+- name: Setup Kubernetes cluster on GCP VM
+  hosts: k8s_master
+  become: yes
+  vars:
+    ansible_user: ubuntu
+    ansible_ssh_private_key_file: ~/.ssh/id_rsa
+    
+  tasks:
+    - name: Update package cache
+      apt:
+        update_cache: yes
+        cache_valid_time: 3600
+
+    - name: Upgrade all packages
+      apt:
+        upgrade: dist
+        autoremove: yes
+        autoclean: yes
+
+    - name: Install required packages
+      apt:
+        name:
+          - apt-transport-https
+          - ca-certificates
+          - curl
+          - gnupg
+          - lsb-release
+          - software-properties-common
+          - unzip
+          - jq
+          - git
+        state: present
+
+    - name: Check if Docker is installed
+      command: docker --version
+      register: docker_check
+      ignore_errors: yes
+
+    - name: Install Docker if not present
+      block:
+        - name: Add Docker GPG key
+          apt_key:
+            url: https://download.docker.com/linux/ubuntu/gpg
+            state: present
+
+        - name: Add Docker repository
+          apt_repository:
+            repo: "deb [arch=amd64] https://download.docker.com/linux/ubuntu {{ ansible_distribution_release }} stable"
+            state: present
+
+        - name: Install Docker
+          apt:
+            name:
+              - docker-ce
+              - docker-ce-cli
+              - containerd.io
+            state: present
+
+        - name: Add user to docker group
+          user:
+            name: "{{ ansible_user }}"
+            groups: docker
+            append: yes
+
+        - name: Start and enable Docker service
+          systemd:
+            name: docker
+            state: started
+            enabled: yes
+      when: docker_check.rc != 0
+
+    - name: Check if kubectl is installed
+      command: kubectl version --client
+      register: kubectl_check
+      ignore_errors: yes
+
+    - name: Install kubectl if not present
+      block:
+        - name: Download kubectl
+          get_url:
+            url: "https://dl.k8s.io/release/{{ kubectl_version | default('v1.28.0') }}/bin/linux/amd64/kubectl"
+            dest: /tmp/kubectl
+            mode: '0755'
+
+        - name: Install kubectl
+          copy:
+            src: /tmp/kubectl
+            dest: /usr/local/bin/kubectl
+            mode: '0755'
+            remote_src: yes
+      when: kubectl_check.rc != 0
+
+    - name: Check if k3s is installed
+      command: k3s --version
+      register: k3s_check
+      ignore_errors: yes
+
+    - name: Install k3s if not present
+      block:
+        - name: Download k3s installer
+          get_url:
+            url: https://get.k3s.io
+            dest: /tmp/k3s-installer.sh
+            mode: '0755'
+
+        - name: Install k3s
+          shell: |
+            curl -sfL https://get.k3s.io | sh -s - --write-kubeconfig-mode 644
+          environment:
+            INSTALL_K3S_EXEC: "--disable traefik"
+
+        - name: Wait for k3s to be ready
+          wait_for:
+            port: 6443
+            host: localhost
+            timeout: 60
+
+        - name: Create .kube directory
+          file:
+            path: /home/{{ ansible_user }}/.kube
+            state: directory
+            owner: "{{ ansible_user }}"
+            group: "{{ ansible_user }}"
+
+        - name: Copy k3s kubeconfig to user directory
+          copy:
+            src: /etc/rancher/k3s/k3s.yaml
+            dest: /home/{{ ansible_user }}/.kube/config
+            owner: "{{ ansible_user }}"
+            group: "{{ ansible_user }}"
+            mode: '0600'
+            remote_src: yes
+
+        - name: Update kubeconfig server address
+          replace:
+            path: /home/{{ ansible_user }}/.kube/config
+            regexp: '127.0.0.1'
+            replace: '0.0.0.0'
+      when: k3s_check.rc != 0
+
+    - name: Install Helm
+      block:
+        - name: Add Helm GPG key
+          apt_key:
+            url: https://baltocdn.com/helm/signing.asc
+            state: present
+
+        - name: Add Helm repository
+          apt_repository:
+            repo: "deb [arch={{ ansible_architecture }} signed-by=/usr/share/keyrings/helm.gpg] https://baltocdn.com/helm/stable/debian/ all main"
+            state: present
+
+        - name: Install Helm
+          apt:
+            name: helm
+            state: present
+
+    - name: Install NGINX Ingress Controller
+      shell: |
+        kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/baremetal/deploy.yaml
+      become_user: "{{ ansible_user }}"
+      ignore_errors: true
+
+    - name: Wait for NGINX Ingress to be ready
+      shell: kubectl wait --namespace ingress-nginx --for=condition=ready pod --selector=app.kubernetes.io/component=controller --timeout=90s
+      become_user: "{{ ansible_user }}"
+      ignore_errors: true
+
+    - name: Create namespace for messaging app
+      kubernetes.core.k8s:
+        name: messaging-app
+        api_version: v1
+        kind: Namespace
+        state: present
+      become_user: "{{ ansible_user }}"
+      ignore_errors: true
+
+    - name: Create deployment directory
+      file:
+        path: /home/{{ ansible_user }}/messaging-app-deployment
+        state: directory
+        owner: "{{ ansible_user }}"
+        group: "{{ ansible_user }}"
+
+    - name: Display cluster info
+      command: kubectl cluster-info
+      become_user: "{{ ansible_user }}"
+      register: cluster_info
+
+    - name: Show cluster information
+      debug:
+        msg: "{{ cluster_info.stdout }}"

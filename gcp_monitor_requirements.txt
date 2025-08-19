@@ -1,0 +1,29 @@
+#!/usr/bin/env python3
+"""
+GCP Free Tier Monitor and Enforcer - Requirements
+
+This script requires the following Python packages:
+- google-cloud-compute
+- google-cloud-storage  
+- google-cloud-bigquery
+- google-cloud-resource-manager
+- google-cloud-billing
+- google-auth
+
+Install with:
+pip install google-cloud-compute google-cloud-storage google-cloud-bigquery google-cloud-resource-manager google-cloud-billing google-auth
+"""
+
+# Core GCP requirements
+google-cloud-compute>=1.15.0
+google-cloud-storage>=2.10.0
+google-cloud-bigquery>=3.11.0
+google-cloud-resource-manager>=1.10.0
+google-cloud-billing>=1.11.0
+google-auth>=2.22.0
+google-auth-oauthlib>=1.1.0
+google-auth-httplib2>=0.1.1
+
+# Additional utilities
+requests>=2.31.0
+python-dateutil>=2.8.2

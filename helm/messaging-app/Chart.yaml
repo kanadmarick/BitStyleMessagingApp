@@ -1,0 +1,17 @@
+apiVersion: v2
+name: messaging-app
+description: A secure, real-time messaging application with terminal theme
+version: 1.0.0
+appVersion: "1.0"
+type: application
+keywords:
+  - messaging
+  - websocket
+  - encryption
+  - terminal
+home: https://github.com/kanadmarick/BitStyleMessagingApp
+sources:
+  - https://github.com/kanadmarick/BitStyleMessagingApp
+maintainers:
+  - name: kanadmarick
+    email: kanadmarick@gmail.com

@@ -1,0 +1,8 @@
+# Terraform variables file
+project_id = "potent-galaxy-359711"     # Your actual GCP project ID
+credentials_file = "gcp-key.json"       # Path to your GCP service account key
+region = "us-central1"                  # Free tier eligible region
+zone = "us-central1-a"                  # Free tier eligible zone
+machine_type = "e2-micro"               # Free tier eligible instance type
+ssh_user = "ubuntu"                     # SSH username
+public_key_path = "~/.ssh/id_rsa.pub"   # Path to your public SSH key

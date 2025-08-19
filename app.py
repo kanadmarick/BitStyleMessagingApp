@@ -1,8 +1,7 @@
 from flask import Flask, render_template, request, jsonify
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
-
-
 import sqlite3
+import os
 DB_PATH = 'messages.db'
 
 def init_db():
@@ -114,22 +113,18 @@ def handle_message(data):
     emit('message', data, room=room)
 
 if __name__ == '__main__':
-    import sys
-    import socket
-    port = 5000
-    if len(sys.argv) > 1:
+    # Auto-port selection for different environments
+    port = int(os.environ.get('PORT', 5000))  # Use PORT env var for containers
+    ports_to_try = [port] if port != 5000 else [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010]
+    
+    for port in ports_to_try:
         try:
-            port = int(sys.argv[1])
-        except Exception:
-            pass
-    # Try to bind to the chosen port, else find a free one
-    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    while True:
-        try:
-            sock.bind(('0.0.0.0', port))
-            sock.close()
+            print(f'Starting server on port {port}')
+            socketio.run(app, host='0.0.0.0', port=port, allow_unsafe_werkzeug=True)
             break
-        except OSError:
-            port += 1
-    print(f"Starting server on port {port}")
-    socketio.run(app, host='0.0.0.0', port=port)
+        except OSError as e:
+            if "Address already in use" in str(e) and port != ports_to_try[-1]:
+                print(f'Port {port} is in use, trying next port...')
+                continue
+            else:
+                raise

@@ -1,0 +1,77 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: messaging-app
+  namespace: messaging-app
+  labels:
+    app: messaging-app
+    chart: messaging-app-1.0.0
+    release: messaging-app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: messaging-app
+      release: messaging-app
+  template:
+    metadata:
+      labels:
+        app: messaging-app
+        release: messaging-app
+    spec:
+      containers:
+      - name: messaging-app
+        image: "gcr.io/potent-galaxy-359711/messaging-app:latest"
+        imagePullPolicy: Always
+        ports:
+        - name: http
+          containerPort: 5000
+          protocol: TCP
+        env:
+        - name: PORT
+          value: "5000"
+        - name: FLASK_ENV
+          value: "production"
+        - name: PYTHONUNBUFFERED
+          value: "1"
+        resources:
+          limits:
+            cpu: 200m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 128Mi
+        livenessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /
+            port: 5000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        volumeMounts:
+        - name: data
+          mountPath: /app/data
+      volumes:
+      - name: data
+        emptyDir: {}
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: app
+                  operator: In
+                  values:
+                  - messaging-app
+              topologyKey: kubernetes.io/hostname

@@ -1,0 +1,235 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GKE_CLUSTER: messaging-app
+  GKE_ZONE: us-central1-a
+  DEPLOYMENT_NAME: messaging-app
+  IMAGE: messaging-app
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.12'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov
+
+    - name: Run unit tests
+      run: |
+        python -m pytest test_app.py test_app_detailed.py -v --cov=app --cov-report=xml
+
+    - name: Run integration tests
+      run: |
+        python test_integration.py
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./coverage.xml
+        fail_ci_if_error: true
+
+  build-and-push:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+    - name: Configure Docker to use gcloud as a credential helper
+      run: |
+        gcloud auth configure-docker
+
+    - name: Build Docker image
+      run: |
+        docker build -t gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA .
+        docker tag gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA gcr.io/$PROJECT_ID/$IMAGE:latest
+
+    - name: Push Docker image to GCR
+      run: |
+        docker push gcr.io/$PROJECT_ID/$IMAGE:$GITHUB_SHA
+        docker push gcr.io/$PROJECT_ID/$IMAGE:latest
+
+  deploy-infrastructure:
+    needs: [test]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+      with:
+        terraform_version: 1.6.0
+
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+    - name: Create GCP credentials file
+      run: |
+        echo '${{ secrets.GCP_SA_KEY }}' > terraform/gcp-key.json
+
+    - name: Create terraform.tfvars
+      run: |
+        cat > terraform/terraform.tfvars << EOF
+        project_id = "${{ secrets.GCP_PROJECT_ID }}"
+        credentials_file = "gcp-key.json"
+        region = "us-central1"
+        zone = "us-central1-a"
+        machine_type = "e2-micro"
+        ssh_user = "ubuntu"
+        public_key_path = "~/.ssh/id_rsa.pub"
+        EOF
+
+    - name: Generate SSH key pair
+      run: |
+        ssh-keygen -t rsa -b 4096 -f ~/.ssh/id_rsa -N ""
+
+    - name: Terraform Init
+      working-directory: terraform
+      run: terraform init
+
+    - name: Terraform Plan
+      working-directory: terraform
+      run: terraform plan
+
+    - name: Terraform Apply
+      working-directory: terraform
+      run: terraform apply -auto-approve
+
+    - name: Get Terraform outputs
+      working-directory: terraform
+      run: |
+        echo "MASTER_IP=$(terraform output -raw master_external_ip)" >> $GITHUB_ENV
+        echo "STATIC_IP=$(terraform output -raw static_ip)" >> $GITHUB_ENV
+
+    - name: Update Ansible inventory
+      run: |
+        echo "[k8s_master]" > ansible/inventory
+        echo "k8s-master ansible_host=${{ env.MASTER_IP }}" >> ansible/inventory
+
+    - name: Wait for VM to be ready
+      run: |
+        sleep 60  # Wait for VM startup script to complete
+
+    - name: Setup Ansible
+      run: |
+        pip install ansible kubernetes
+
+    - name: Run Ansible playbook
+      run: |
+        cd ansible
+        ANSIBLE_HOST_KEY_CHECKING=False ansible-playbook -i inventory playbook.yml
+
+    - name: Save infrastructure info
+      run: |
+        echo "Master IP: ${{ env.MASTER_IP }}" >> $GITHUB_STEP_SUMMARY
+        echo "Static IP: ${{ env.STATIC_IP }}" >> $GITHUB_STEP_SUMMARY
+
+  deploy-app:
+    needs: [build-and-push, deploy-infrastructure]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+    - name: Get Terraform outputs
+      working-directory: terraform
+      run: |
+        terraform init
+        echo "MASTER_IP=$(terraform output -raw master_external_ip)" >> $GITHUB_ENV
+
+    - name: Setup kubectl
+      run: |
+        curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+        chmod +x kubectl
+        sudo mv kubectl /usr/local/bin/
+
+    - name: Update Kubernetes manifests
+      run: |
+        sed -i "s/PROJECT_ID/${{ secrets.GCP_PROJECT_ID }}/g" k8s/deployment.yaml
+
+    - name: Setup SSH key
+      run: |
+        echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+        chmod 600 ~/.ssh/id_rsa
+
+    - name: Copy kubeconfig from remote
+      run: |
+        ssh -o StrictHostKeyChecking=no ubuntu@${{ env.MASTER_IP }} "kind export kubeconfig --name=messaging-app"
+        scp -o StrictHostKeyChecking=no ubuntu@${{ env.MASTER_IP }}:~/.kube/config ~/.kube/config
+        
+    - name: Deploy to Kubernetes
+      run: |
+        kubectl apply -f k8s/configmap.yaml
+        kubectl apply -f k8s/deployment.yaml
+        kubectl rollout status deployment/messaging-app -n messaging-app --timeout=300s
+
+    - name: Get service info
+      run: |
+        kubectl get services -n messaging-app
+        kubectl get pods -n messaging-app
+        echo "Application deployed successfully!" >> $GITHUB_STEP_SUMMARY
+        echo "Access URL: http://${{ env.MASTER_IP }}" >> $GITHUB_STEP_SUMMARY
+
+  cleanup-on-failure:
+    needs: [deploy-infrastructure, deploy-app]
+    runs-on: ubuntu-latest
+    if: failure() && github.ref == 'refs/heads/main'
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Terraform
+      uses: hashicorp/setup-terraform@v3
+
+    - name: Setup Google Cloud CLI
+      uses: google-github-actions/setup-gcloud@v1
+      with:
+        service_account_key: ${{ secrets.GCP_SA_KEY }}
+        project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+    - name: Terraform Destroy on Failure
+      working-directory: terraform
+      run: |
+        terraform init
+        terraform destroy -auto-approve || true

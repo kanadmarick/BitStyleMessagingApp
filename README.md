@@ -1,7 +1,7 @@
-# BitStyleMessagingApp Documentation
+# BitStyle Messaging App
 
 ## Overview
-A secure, real-time messaging application designed for two users with a terminal-inspired aesthetic and military-grade end-to-end encryption. Built with Python Flask backend and optimized for mobile devices, particularly iPhone Safari.
+Secure, real-time messaging with client-side AES encryption, Flask + SocketIO backend, and a responsive terminal-style UI. Optimized for desktop and mobile (iPhone Safari).
 
 **Key Features:**
 - 🔐 AES End-to-End Encryption
@@ -9,17 +9,59 @@ A secure, real-time messaging application designed for two users with a terminal
 - 💻 Terminal/Matrix-Style Design
 - ⚡ Real-Time WebSocket Communication
 - 👥 Two-User Room Limit
-- 🧪 Comprehensive Test Suite
+- 💾 Message Persistence with SQLite
+- 🧪 Comprehensive Test Suite with Edge Cases
+- 📊 Detailed Backend Logging
+- 🚀 CI/CD (Jenkins Freestyle today; Jenkinsfile-ready)
+- 🐳 Docker containerization
+- ☸️ Kubernetes (Helm charts provided)
+- 🏗️ Infrastructure as Code (Terraform)
+- 🔧 Configuration Management (Ansible)
 
 ---
 
-## Files
-- `app.py`: Flask + SocketIO backend server with auto-port selection
+## Files (Top-Level)
+- `app.py`: Flask + SocketIO backend server with auto-port selection and SQLite persistence
 - `index.html`: Responsive frontend with terminal theme and touch optimization
-- `test_app.py`: Basic unit tests for server functionality
-- `test_app_detailed.py`: Comprehensive unit tests for all features
-- `test_integration.py`: Integration tests with real SocketIO clients
+- `messages.db`: SQLite database for message persistence
+- `Dockerfile`: Multi-stage Docker build configuration
+- `Makefile`: Handy dev/deploy shortcuts
+- `DEPLOYMENT.md`: CI/CD setup (reference)
+- **Infrastructure**:
+  - `terraform/`: Infrastructure as Code for GCP free tier resources
+  - `ansible/`: Configuration management and Kubernetes setup
+  - `k8s/`: Kubernetes manifests for container orchestration
+  - `.github/workflows/`: CI/CD pipeline configuration
+- **Testing**:
+  - `test_app.py`: Basic unit tests for server functionality
+  - Other tests optional; see repo for additional suites
 - `README.md`: This documentation file
+
+---
+
+## 🚀 CI/CD & Cloud Deployment
+
+### Cloud Infrastructure (GCP Free Tier)
+- **Compute Engine**: e2-micro VM instance (always free)
+- **Container Registry**: Docker image storage
+- **Kubernetes**: Kind cluster on VM for container orchestration
+- **Networking**: Firewall rules and load balancing
+- **Infrastructure as Code**: Terraform for reproducible deployments
+
+### Automated Pipeline Stages
+1. **GitHub Push**: Code pushed to main branch triggers webhook
+2. **Jenkins Build**: Automated testing and Docker image creation  
+3. **Terraform Deploy**: Infrastructure provisioning on GCP free tier
+4. **Ansible Configure**: K3s cluster setup and system configuration
+5. **Helm Deploy**: Application deployment with rolling updates
+6. **Health Checks**: Automated verification and rollback on failure
+
+### Jenkins (Freestyle today)
+Access Jenkins at http://localhost:8080 and create a Freestyle job with shell steps:
+- Run tests: `python3 -m pytest -q || true`
+- Build image: `docker build -t bitstyle-messaging:$BUILD_NUMBER .`
+- Run: `docker run -d --name messaging-app-$BUILD_NUMBER -p 500$BUILD_NUMBER:5000 bitstyle-messaging:$BUILD_NUMBER || true`
+For full pipeline migration, you can switch to a Jenkinsfile once the Pipeline plugin is installed.
 
 ---
 
@@ -60,11 +102,14 @@ A secure, real-time messaging application designed for two users with a terminal
 - Tested and verified on iOS Safari browser
 
 ### 👥 Smart Room Management
-- Enforced two-user limit per room
+- Enforced two-user limit per room with immediate disconnect
+- Message persistence across sessions using SQLite database
+- Message history automatically loaded on user join
 - Graceful handling of user disconnections
 - Prevents duplicate connections from same user
 - User color assignment for message identification
 - Automatic cleanup of disconnected sessions
+- Detailed backend logging for debugging and monitoring
 
 ---
 
@@ -72,14 +117,18 @@ A secure, real-time messaging application designed for two users with a terminal
 
 ### Backend (`app.py`)
 - **Framework**: Flask with Flask-SocketIO for WebSocket support
-- **Auto-Port Selection**: Automatically finds available ports (5001-5010)
+- **Database**: SQLite for message persistence with automatic table creation
+- **Auto-Port Selection**: Automatically finds an open port (tries 5001-5010). Also honors `PORT` env var.
 - **CORS Configuration**: Enabled for cross-origin requests (`cors_allowed_origins='*'`)
 - **Event Handling**:
-  - `join`: User authentication and room assignment
-  - `message`: Encrypted message relay between users
+  - `join`: User authentication, room assignment, and history delivery
+  - `message`: Encrypted message relay and database storage
   - `disconnect`: Cleanup and user removal from rooms
-- **Room Management**: Enforces two-user limit with graceful error handling
+- **API Endpoints**:
+  - `/history`: REST endpoint for retrieving message history
+- **Room Management**: Strict two-user limit with immediate disconnect for third user
 - **User Tracking**: Maintains active user lists and prevents duplicates
+- **Logging**: Comprehensive backend logging for joins, disconnects, and errors
 
 ### Frontend (`index.html`)
 - **Responsive Design**: Mobile-first approach with viewport optimization
@@ -92,9 +141,13 @@ A secure, real-time messaging application designed for two users with a terminal
 
 ### Testing Suite
 - **Unit Tests** (`test_app_detailed.py`): Comprehensive backend functionality testing
-- **Integration Tests** (`test_integration.py`): End-to-end messaging scenarios
+- **Integration Tests** (`test_integration.py`): End-to-end messaging scenarios with edge cases
+- **Negative Tests**: Invalid usernames, duplicate users, invalid message types, send after disconnect
+- **Edge Cases**: Room full scenarios, missing fields, empty/long messages, rapid join/leave
+- **Persistence Tests**: Message storage and retrieval across sessions
 - **Test Coverage**: User authentication, room limits, message encryption, disconnect handling
-- **Automated Testing**: Run via unittest framework with detailed assertions
+- **Verbose Output**: Detailed logging and assertions for debugging
+- **Automated Testing**: Run via unittest framework with comprehensive assertions
 
 ---
 
@@ -105,7 +158,8 @@ A secure, real-time messaging application designed for two users with a terminal
 - **Client-Side Only**: All encryption/decryption happens in browser
 - **Zero-Knowledge**: Server never accesses plaintext messages
 - **Key Management**: Room key serves as encryption password
-- **Forward Secrecy**: No message history stored on server
+- **Message Persistence**: Encrypted messages stored in SQLite database
+- **History Delivery**: Previous encrypted messages loaded on join
 
 ### 🛡️ Security Measures
 - **Input Validation**: Sanitized user inputs prevent XSS attacks
@@ -141,10 +195,11 @@ python -m venv .venv
 source .venv/bin/activate  # On Windows: .venv\Scripts\activate
 
 # 3. Install dependencies
-pip install flask flask-socketio python-socketio
+pip install flask flask-socketio python-socketio requests pytest
 
 # 4. Start the server
 python app.py
+# The app will print the chosen URLs, e.g. http://127.0.0.1:5001
 ```
 
 ### Server will automatically:
@@ -162,26 +217,22 @@ python app.py
 
 ## Testing
 
-### Run Unit Tests
+### Run Tests
 ```bash
-# Basic functionality tests
-python -m unittest test_app.py
-
-# Comprehensive feature tests  
-python -m unittest test_app_detailed.py
-
-# Integration tests with real clients
-python test_integration.py
+pytest -q || python -m unittest -v
 ```
 
 ### Test Coverage
 - ✅ User authentication and validation
-- ✅ Two-user room limit enforcement
+- ✅ Two-user room limit enforcement with immediate disconnect
 - ✅ Message encryption/decryption
+- ✅ Message persistence and history retrieval
 - ✅ Real-time message delivery
 - ✅ User disconnect handling
 - ✅ Error handling and edge cases
 - ✅ Integration with SocketIO clients
+- ✅ Negative test cases (invalid inputs, duplicate users)
+- ✅ Edge cases (room full, missing fields, empty/long messages)
 
 ---
 
@@ -211,11 +262,12 @@ python test_integration.py
 ### Code Structure
 ```
 BitStyleMessagingApp/
-├── app.py                 # Flask server with SocketIO
+├── app.py                 # Flask server with SocketIO and SQLite
 ├── index.html            # Frontend with terminal theme
+├── messages.db           # SQLite database for message persistence
 ├── test_app.py           # Basic unit tests
 ├── test_app_detailed.py  # Comprehensive tests
-├── test_integration.py   # Integration testing
+├── test_integration.py   # Integration and edge case testing
 ├── README.md             # Documentation
 └── __pycache__/          # Python cache files
 ```
@@ -228,11 +280,13 @@ BitStyleMessagingApp/
 - **Canvas Graphics**: Update ASCII art in canvas rendering
 
 ### Adding Features
-- **Message History**: Add database integration for persistence
+- **Enhanced Logging**: Backend includes detailed join/disconnect/error logging
+- **Message History**: Database integration with SQLite for persistence ✅
 - **File Sharing**: Implement encrypted file transfer
 - **Voice Messages**: Add WebRTC audio recording
 - **Typing Indicators**: Real-time typing status
 - **User Avatars**: Profile picture integration
+- **Message Search**: Search through persistent message history
 
 ---
 
@@ -242,7 +296,8 @@ BitStyleMessagingApp/
 
 #### "Room is full" Error
 - **Cause**: Two users already connected or previous session not cleaned up
-- **Solution**: Restart server or wait for automatic session cleanup
+- **Solution**: Third user is immediately disconnected with detailed backend logging
+- **Debug**: Check server logs for explicit disconnect messages
 
 #### Connection Issues
 - **Cause**: Port conflicts or firewall blocking
@@ -303,7 +358,17 @@ python app.py
 
 ## Changelog
 
-### v2.0.0 (Latest)
+### v3.0.0 (Latest)
+- ✅ Message persistence with SQLite database
+- ✅ Message history loaded on user join
+- ✅ REST API endpoint for message history
+- ✅ Comprehensive edge case testing
+- ✅ Negative test cases for invalid inputs
+- ✅ Detailed backend logging for debugging
+- ✅ Strict room limit enforcement with immediate disconnect
+- ✅ Enhanced integration test suite
+
+### v2.0.0
 - ✅ Terminal theme with monospace fonts
 - ✅ iPhone Safari optimization
 - ✅ Touch-friendly interface

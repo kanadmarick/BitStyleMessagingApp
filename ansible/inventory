@@ -1,0 +1,4 @@
+[k8s_master]
+# This will be populated by Terraform output
+# Replace with actual IP after running terraform apply
+# Example: k8s-master ansible_host=35.123.456.789

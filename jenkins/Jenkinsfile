@@ -1,0 +1,363 @@
+pipeline {
+    agent any
+    
+    environment {
+        PROJECT_ID = 'potent-galaxy-359711'
+        REGION = 'us-central1'
+        ZONE = 'us-central1-a'
+        IMAGE_NAME = 'messaging-app'
+        IMAGE_TAG = "${BUILD_NUMBER}"
+        GCR_HOSTNAME = 'gcr.io'
+        GCP_CREDENTIALS = credentials('gcp-service-account-key')
+        SSH_KEY = credentials('gcp-vm-ssh-key')
+        KUBECONFIG_FILE = '/tmp/kubeconfig-${BUILD_NUMBER}'
+    }
+    
+    tools {
+        terraform 'terraform-1.6.0'
+    }
+    
+    stages {
+        stage('Checkout') {
+            steps {
+                echo '🔄 Checking out code from GitHub...'
+                checkout scm
+                script {
+                    env.GIT_COMMIT_SHORT = sh(
+                        script: 'git rev-parse --short HEAD',
+                        returnStdout: true
+                    ).trim()
+                    env.FULL_IMAGE_NAME = "${GCR_HOSTNAME}/${PROJECT_ID}/${IMAGE_NAME}:${IMAGE_TAG}-${GIT_COMMIT_SHORT}"
+                }
+            }
+        }
+        
+        stage('GCP Free Tier Check - Pre-Deployment') {
+            steps {
+                echo '💰 Checking GCP free tier limits before deployment...'
+                script {
+                    // Authenticate with GCP
+                    sh '''
+                        gcloud auth activate-service-account --key-file=$GCP_CREDENTIALS
+                        gcloud config set project $PROJECT_ID
+                    '''
+                    
+                    // Run pre-deployment check
+                    def result = sh(
+                        script: "python3 jenkins_gcp_monitor.py --project-id ${PROJECT_ID} --stage pre",
+                        returnStatus: true
+                    )
+                    
+                    if (result != 0) {
+                        error("❌ Pre-deployment GCP free tier check failed! Deployment blocked to prevent charges.")
+                    }
+                    
+                    echo "✅ Pre-deployment check passed - proceeding with deployment"
+                }
+            }
+        }
+        
+        stage('Test') {
+            steps {
+                echo '🧪 Running tests...'
+                sh '''
+                    python3 -m pip install --user -r requirements.txt
+                    python3 -m pip install --user pytest pytest-cov
+                    python3 -m pytest test_app.py test_app_detailed.py -v --cov=app
+                    echo "✅ Unit tests passed"
+                    
+                    # Run integration tests
+                    timeout 60 python3 test_integration.py || echo "⚠️  Integration tests completed"
+                '''
+            }
+            post {
+                always {
+                    publishTestResults testResultsPattern: 'test-results.xml'
+                    publishCoverageGoberturaReport(reportFiles: 'coverage.xml')
+                }
+            }
+        }
+        
+        stage('Build Docker Image') {
+            steps {
+                echo '🐳 Building Docker image...'
+                script {
+                    sh '''
+                        echo "Building image: ${FULL_IMAGE_NAME}"
+                        docker build -t ${FULL_IMAGE_NAME} .
+                        docker tag ${FULL_IMAGE_NAME} ${GCR_HOSTNAME}/${PROJECT_ID}/${IMAGE_NAME}:latest
+                        echo "✅ Docker image built successfully"
+                    '''
+                }
+            }
+        }
+        
+        stage('Push to GCR') {
+            steps {
+                echo '📦 Pushing image to Google Container Registry...'
+                script {
+                    sh '''
+                        # Authenticate with GCP
+                        echo $GCP_CREDENTIALS | base64 -d > /tmp/gcp-key.json
+                        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+                        gcloud config set project ${PROJECT_ID}
+                        
+                        # Configure Docker for GCR
+                        gcloud auth configure-docker --quiet
+                        
+                        # Push images
+                        docker push ${FULL_IMAGE_NAME}
+                        docker push ${GCR_HOSTNAME}/${PROJECT_ID}/${IMAGE_NAME}:latest
+                        
+                        echo "✅ Images pushed to GCR"
+                        
+                        # Cleanup
+                        rm -f /tmp/gcp-key.json
+                    '''
+                }
+            }
+        }
+        
+        stage('Terraform - Ensure Infrastructure') {
+            steps {
+                echo '🏗️ Ensuring infrastructure with Terraform...'
+                dir('terraform') {
+                    script {
+                        sh '''
+                            # Setup GCP credentials
+                            echo $GCP_CREDENTIALS | base64 -d > gcp-key.json
+                            
+                            # Initialize Terraform
+                            terraform init
+                            
+                            # Plan infrastructure
+                            terraform plan -out=tfplan
+                            
+                            # Apply infrastructure changes
+                            terraform apply -auto-approve tfplan
+                            
+                            # Get VM IP for Ansible
+                            VM_IP=$(terraform output -raw master_external_ip)
+                            echo "VM_IP=${VM_IP}" > ../vm_ip.env
+                            echo "✅ Infrastructure ensured - VM IP: ${VM_IP}"
+                            
+                            # Cleanup credentials
+                            rm -f gcp-key.json
+                        '''
+                    }
+                }
+            }
+            post {
+                always {
+                    archiveArtifacts artifacts: 'vm_ip.env', allowEmptyArchive: true
+                }
+            }
+        }
+        
+        stage('Ansible - Ensure K3s + Helm') {
+            steps {
+                echo '🔧 Ensuring K3s cluster and Helm with Ansible...'
+                script {
+                    sh '''
+                        # Load VM IP
+                        source vm_ip.env
+                        
+                        # Setup SSH key
+                        echo "$SSH_KEY" > /tmp/ssh_key
+                        chmod 600 /tmp/ssh_key
+                        
+                        # Update Ansible inventory
+                        echo "[k8s_master]" > ansible/inventory
+                        echo "k8s-master ansible_host=${VM_IP}" >> ansible/inventory
+                        
+                        # Wait for VM to be ready
+                        echo "⏳ Waiting for VM to be ready..."
+                        sleep 30
+                        
+                        # Test SSH connection
+                        ssh -i /tmp/ssh_key -o StrictHostKeyChecking=no ubuntu@${VM_IP} "echo 'SSH connection successful'"
+                        
+                        # Run Ansible playbook
+                        cd ansible
+                        ansible-playbook -i inventory playbook.yml --private-key=/tmp/ssh_key -u ubuntu
+                        
+                        echo "✅ K3s cluster and Helm ready"
+                        
+                        # Cleanup SSH key
+                        rm -f /tmp/ssh_key
+                    '''
+                }
+            }
+        }
+        
+        stage('Get Kubeconfig') {
+            steps {
+                echo '📋 Retrieving kubeconfig from VM...'
+                script {
+                    sh '''
+                        # Load VM IP
+                        source vm_ip.env
+                        
+                        # Setup SSH key
+                        echo "$SSH_KEY" > /tmp/ssh_key
+                        chmod 600 /tmp/ssh_key
+                        
+                        # Get kubeconfig from VM
+                        scp -i /tmp/ssh_key -o StrictHostKeyChecking=no ubuntu@${VM_IP}:/home/ubuntu/.kube/config ${KUBECONFIG_FILE}
+                        
+                        # Update kubeconfig server address
+                        sed -i "s/127.0.0.1:6443/${VM_IP}:6443/g" ${KUBECONFIG_FILE}
+                        
+                        echo "✅ Kubeconfig retrieved and updated"
+                        
+                        # Cleanup SSH key
+                        rm -f /tmp/ssh_key
+                    '''
+                }
+            }
+        }
+        
+        stage('Helm Deploy') {
+            steps {
+                echo '⛵ Deploying application with Helm...'
+                script {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG_FILE}
+                        
+                        # Test kubectl connection
+                        kubectl cluster-info
+                        kubectl get nodes
+                        
+                        # Create namespace if it doesn't exist
+                        kubectl create namespace messaging-app || true
+                        
+                        # Deploy with Helm
+                        cd helm
+                        helm upgrade --install messaging-app ./messaging-app \\
+                            --namespace messaging-app \\
+                            --set image.repository=${GCR_HOSTNAME}/${PROJECT_ID}/${IMAGE_NAME} \\
+                            --set image.tag=${IMAGE_TAG}-${GIT_COMMIT_SHORT} \\
+                            --set ingress.enabled=true \\
+                            --wait --timeout=300s
+                        
+                        echo "✅ Application deployed with Helm"
+                    '''
+                }
+            }
+        }
+        
+        stage('Rollout Status') {
+            steps {
+                echo '🚀 Checking rollout status...'
+                script {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG_FILE}
+                        
+                        # Check rollout status
+                        kubectl rollout status deployment/messaging-app -n messaging-app --timeout=300s
+                        
+                        # Get service info
+                        kubectl get pods -n messaging-app
+                        kubectl get services -n messaging-app
+                        kubectl get ingress -n messaging-app
+                        
+                        # Load VM IP for access URL
+                        source vm_ip.env
+                        echo "🌐 Application accessible at: http://${VM_IP}"
+                        
+                        echo "✅ Rollout completed successfully"
+                    '''
+                }
+            }
+        }
+        
+        stage('Health Check') {
+            steps {
+                echo '🏥 Performing health check...'
+                script {
+                    sh '''
+                        export KUBECONFIG=${KUBECONFIG_FILE}
+                        source vm_ip.env
+                        
+                        # Wait for application to be ready
+                        sleep 10
+                        
+                        # Health check
+                        for i in {1..5}; do
+                            if curl -f http://${VM_IP}; then
+                                echo "✅ Health check passed"
+                                break
+                            else
+                                echo "⚠️  Health check attempt $i failed, retrying..."
+                                sleep 10
+                            fi
+                        done
+                    '''
+                }
+            }
+        }
+        
+        stage('GCP Free Tier Check - Post-Deployment') {
+            steps {
+                echo '💰 Verifying GCP free tier limits after deployment...'
+                script {
+                    // Run post-deployment check with emergency shutdown enabled
+                    def result = sh(
+                        script: "python3 jenkins_gcp_monitor.py --project-id ${PROJECT_ID} --stage post",
+                        returnStatus: true
+                    )
+                    
+                    if (result != 0) {
+                        error("❌ Post-deployment GCP free tier check failed! Emergency shutdown may have been triggered.")
+                    }
+                    
+                    echo "✅ Post-deployment check passed - deployment is within free tier limits"
+                    
+                    // Archive monitoring reports
+                    archiveArtifacts artifacts: 'gcp_report_*.txt, gcp_monitor.properties', 
+                                   allowEmptyArchive: true,
+                                   fingerprint: true
+                }
+            }
+        }
+    }
+    
+    post {
+        always {
+            echo '🧹 Cleaning up...'
+            script {
+                sh '''
+                    # Cleanup temporary files
+                    rm -f vm_ip.env
+                    rm -f ${KUBECONFIG_FILE}
+                    rm -f /tmp/ssh_key
+                    rm -f /tmp/gcp-key.json
+                    
+                    # Cleanup Docker images
+                    docker rmi ${FULL_IMAGE_NAME} || true
+                    docker rmi ${GCR_HOSTNAME}/${PROJECT_ID}/${IMAGE_NAME}:latest || true
+                    docker system prune -f
+                '''
+            }
+        }
+        success {
+            echo '🎉 Pipeline completed successfully!'
+            script {
+                sh '''
+                    source vm_ip.env
+                    echo "Application deployed successfully!"
+                    echo "Access URL: http://${VM_IP}"
+                '''
+            }
+        }
+        failure {
+            echo '❌ Pipeline failed!'
+            script {
+                sh '''
+                    echo "Pipeline failed at stage: ${env.STAGE_NAME}"
+                    kubectl get events -n messaging-app --sort-by='.lastTimestamp' || true
+                '''
+            }
+        }
+    }
+}

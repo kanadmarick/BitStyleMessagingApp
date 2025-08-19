@@ -114,6 +114,17 @@ def handle_message(data):
     save_message(username, encrypted, timestamp)
     emit('message', data, room=room)
 
+@socketio.on('public_key')
+def handle_public_key(data):
+    sid = request.sid
+    if sid not in user_sid_map:
+        return  # Ignore if user not in room
+    # Relay the public key to the other user in the room
+    for other_sid, other_username in user_sid_map.items():
+        if other_sid != sid:
+            emit('public_key', data, room=other_sid)
+            break
+
 if __name__ == '__main__':
     # Auto-port selection for different environments
     port = int(os.environ.get('PORT', 5000))  # Use PORT env var for containers

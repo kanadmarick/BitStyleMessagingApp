@@ -1,29 +1,78 @@
-# BitStyle Messaging App
+# ByteChat - Real-time Messaging App
 
 ## Overview
-Secure, real-time messaging with client-side AES encryption, Flask + SocketIO backend, and a responsive terminal-style UI. Optimized for desktop and mobile (iPhone Safari).
+Secure, real-time messaging with client-side ECDH key exchange, AES encryption, React frontend, Flask + SocketIO backend, and a retro terminal-style UI. Features automated deployment and failsafe port detection.
 
 **Key Features:**
-- 🔐 AES End-to-End Encryption
-- 📱 Mobile-Optimized Interface  
-- 💻 Terminal/Matrix-Style Design
+- 🔐 ECDH Key Exchange + AES-GCM End-to-End Encryption
+- ⚛️ Modern React Frontend with Dynamic Backend Detection
+- 📱 Mobile-Optimized Terminal Interface  
+- 💻 Retro Matrix/ByteChat Terminal Design
 - ⚡ Real-Time WebSocket Communication
-- 👥 Two-User Room Limit
+- 👥 Two-User Room Limit with Join/Leave Notifications
 - 💾 Message Persistence with SQLite
-- 🧪 Comprehensive Test Suite with Edge Cases
+- � Ansible Automation for Service Deployment
+- 🔧 Failsafe Port Detection (5001-5010 range)
+- �🧪 Comprehensive Test Suite with Edge Cases
 - 📊 Detailed Backend Logging
 - 🚀 CI/CD (Jenkins Freestyle today; Jenkinsfile-ready)
 - 🐳 Docker containerization
 - ☸️ Kubernetes (Helm charts provided)
 - 🏗️ Infrastructure as Code (Terraform)
-- 🔧 Configuration Management (Ansible)
 
 ---
 
+## Quick Start
+
+### Automated Deployment (Recommended)
+```bash
+# Start both React frontend and Flask backend automatically
+ansible-playbook ansible/playbook_start_bytechat.yml
+```
+Access the app at **http://localhost:3000** (React frontend)
+
+### Manual Deployment
+```bash
+# Start Flask backend
+source .venv/bin/activate
+python app.py
+
+# In another terminal, start React frontend
+cd React/frontend
+npm start
+```
+
+---
+
+## Architecture
+
+### Frontend (React)
+- **Location**: `React/frontend/`
+- **Technology**: React.js with Socket.IO client
+- **Features**:
+  - Dynamic backend port detection (tries ports 5001-5010)
+  - ECDH key pair generation for encryption
+  - Retro terminal styling with ByteChat branding
+  - Real-time message display with join/leave notifications
+  - Automatic reconnection handling
+
+### Backend (Flask)
+- **Location**: `app.py`
+- **Technology**: Flask + Flask-SocketIO
+- **Features**:
+  - Auto-port selection (5001-5010) to avoid conflicts
+  - Two-user room management
+  - Message persistence with SQLite
+  - Join/leave notifications as system messages
+  - Debug logging for troubleshooting
+
+## Files (Top-Level)
 ## Files (Top-Level)
 - `app.py`: Flask + SocketIO backend server with auto-port selection and SQLite persistence
-- `index.html`: Responsive frontend with terminal theme and touch optimization
+- `React/frontend/`: React.js frontend with dynamic backend detection and terminal UI
+- `index.html`: Legacy Flask-served frontend (deprecated in favor of React)
 - `messages.db`: SQLite database for message persistence
+- `ansible/playbook_start_bytechat.yml`: Automated deployment script with failsafe port detection
 - `Dockerfile`: Multi-stage Docker build configuration
 - `Makefile`: Handy dev/deploy shortcuts
 - `DEPLOYMENT.md`: CI/CD setup (reference)
@@ -67,37 +116,47 @@ For full pipeline migration, you can switch to a Jenkinsfile once the Pipeline p
 
 ## Core Functionality
 
-### 🔐 Secure User Authentication
-- Users enter a unique username and shared encryption key
-- Room key serves as both authentication and encryption password
-- Maximum of two concurrent users per session
-- Automatic user disconnect handling prevents "room full" errors
+### 🔐 Advanced Encryption System
+- **ECDH Key Exchange**: Elliptic Curve Diffie-Hellman for secure key agreement
+- **AES-GCM Encryption**: 256-bit AES with Galois/Counter Mode for authenticated encryption
+- **Client-Side Processing**: All cryptographic operations happen in the browser
+- **Plaintext Fallback**: Supports unencrypted messages for single-user scenarios
+- **Key Generation**: Automatic P-256 curve key pair generation per session
 
-### 💻 Terminal-Style Interface
-- Authentic monospace font for genuine terminal feel
-- Black background with bright green (#00FF00) text
-- Canvas-rendered ASCII art banner
-- Minimalistic, distraction-free design
-- Touch-optimized controls for mobile devices
+### ⚛️ Modern React Frontend
+- **Dynamic Backend Detection**: Automatically tries multiple ports (5001-5010)
+- **Real-Time Messaging**: Socket.IO integration with automatic reconnection
+- **Terminal Aesthetics**: Retro green-on-black design with ByteChat branding
+- **Join/Leave Notifications**: System messages when users enter or exit
+- **Mobile Responsive**: Optimized for both desktop and mobile browsers
 
-### 🔒 Military-Grade Encryption
-- AES-256 encryption using CryptoJS library
-- Messages encrypted client-side before transmission
-- Server never accesses plaintext content
-- End-to-end encryption ensures complete privacy
-- Encryption key never transmitted over network
+### 🤖 Automated Deployment
+- **Ansible Integration**: One-command deployment with `ansible-playbook ansible/playbook_start_bytechat.yml`
+- **Failsafe Port Detection**: Automatically finds available ports for both services
+- **Virtual Environment Support**: Python dependencies managed in `.venv/`
+- **Service Management**: Graceful start/stop of both React and Flask services
+
+### 🔒 Security & Privacy Features
+
+### 🔒 Security & Privacy Features
+- **Two-User Room Limit**: Maximum concurrent users per session
+- **Username Uniqueness**: Prevents duplicate usernames in the same room
+- **Server-Side Validation**: Message integrity checks and user authentication
+- **No Plaintext Storage**: Server only stores encrypted message content
+- **Automatic Disconnection**: Handles room capacity and security violations
 
 ### ⚡ Real-Time Communication
-- WebSocket-based messaging via Flask-SocketIO
-- Instant message delivery with typing indicators
-- Automatic reconnection handling
-- CORS enabled for cross-origin access
-- Auto-port selection to avoid conflicts
+- **WebSocket Technology**: Flask-SocketIO for instant message delivery
+- **Cross-Origin Support**: CORS enabled for flexible deployment
+- **Connection Resilience**: Auto-reconnection and error handling
+- **Multiple Port Support**: Automatic failover if primary port unavailable
+- **Debug Logging**: Comprehensive logging for troubleshooting
 
-### 📱 Mobile Optimization
-- Responsive design optimized for iPhone Safari
-- Touch-friendly interface with 44px minimum touch targets
-- Viewport meta tags for proper mobile scaling
+### 📱 Mobile & Desktop Optimization
+- **Responsive Design**: Works seamlessly on desktop and mobile
+- **Touch-Friendly Interface**: 44px minimum touch targets for mobile
+- **Viewport Optimization**: Proper scaling for different screen sizes
+- **Monospace Typography**: Authentic terminal font rendering
 - Touch-action properties for smooth interaction
 - Tested and verified on iOS Safari browser
 

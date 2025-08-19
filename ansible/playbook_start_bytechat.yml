@@ -1,0 +1,86 @@
+---
+- name: Start ByteChat React frontend and Flask backend
+  hosts: localhost
+  vars:
+    react_dir: "{{ ansible_env.HOME }}/Messaging/React/frontend"
+    flask_dir: "{{ ansible_env.HOME }}/Messaging"
+    flask_port_range: [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010]
+    react_port_range: [3000, 3001, 3002, 3003, 3004, 3005, 3006, 3007, 3008, 3009]
+  tasks:
+    - name: Find available Flask port
+      shell: |
+        for port in {{ flask_port_range | join(' ') }}; do
+          if ! lsof -i :$port > /dev/null 2>&1; then
+            echo $port
+            break
+          fi
+        done
+      register: flask_port_result
+      
+    - name: Set Flask port variable
+      set_fact:
+        flask_port: "{{ flask_port_result.stdout }}"
+        
+    - name: Find available React port
+      shell: |
+        for port in {{ react_port_range | join(' ') }}; do
+          if ! lsof -i :$port > /dev/null 2>&1; then
+            echo $port
+            break
+          fi
+        done
+      register: react_port_result
+      
+    - name: Set React port variable
+      set_fact:
+        react_port: "{{ react_port_result.stdout }}"
+    - name: Ensure Node.js is installed (macOS)
+      homebrew:
+        name: node
+        state: present
+      when: ansible_facts['os_family'] == 'Darwin'
+
+    - name: Install Python dependencies
+      pip:
+        requirements: "{{ flask_dir }}/requirements.txt"
+        virtualenv: "{{ flask_dir }}/.venv"
+        state: present
+
+    - name: Install React frontend dependencies
+      command: npm install
+      args:
+        chdir: "{{ react_dir }}"
+
+    - name: Start Flask backend with dynamic port
+      shell: |
+        pkill -f "python app.py" || true
+        source .venv/bin/activate && PORT={{ flask_port }} nohup python app.py > flask.log 2>&1 &
+      args:
+        chdir: "{{ flask_dir }}"
+        executable: /bin/bash
+
+    - name: Start React frontend with dynamic port
+      shell: |
+        pkill -f "npm start" || true
+        PORT={{ react_port }} nohup npm start > react.log 2>&1 &
+      args:
+        chdir: "{{ react_dir }}"
+
+    - name: Wait for Flask backend to start
+      wait_for:
+        port: "{{ flask_port }}"
+        host: "127.0.0.1"
+        timeout: 30
+
+    - name: Wait for React frontend to start
+      wait_for:
+        port: "{{ react_port }}"
+        host: "127.0.0.1"
+        timeout: 60
+
+    - name: Show URLs for ByteChat
+      debug:
+        msg:
+          - "Flask backend running at http://127.0.0.1:{{ flask_port }}"
+          - "React frontend running at http://localhost:{{ react_port }}"
+          - "Update React App.js Socket.IO client to connect to: http://localhost:{{ flask_port }}"

@@ -1,47 +1,87 @@
-# BitStyle Messaging App - High-Level Architecture
+# ByteChat - High-Level Architecture
 
 ## 1. Overview
 
-The BitStyle Messaging App is a real-time, two-person chat application designed with a retro "hacker terminal" aesthetic. It prioritizes security and privacy through end-to-end encryption, where the server has no access to the unencrypted content of the messages.
+ByteChat is a real-time, two-person chat application with a retro "hacker terminal" aesthetic. It features modern React frontend, Flask backend, end-to-end encryption using ECDH key exchange and AES-GCM, and automated deployment with Ansible.
 
-The project is built with a modern DevOps toolchain, featuring a fully automated CI/CD pipeline for building, testing, and deploying the application to a Kubernetes cluster on Google Cloud Platform (GCP).
+The application prioritizes security and privacy through client-side encryption, where the server only handles encrypted message relay and never accesses plaintext content. The project includes a fully automated CI/CD pipeline for building, testing, and deploying to Kubernetes on Google Cloud Platform (GCP).
 
 ## 2. Application Architecture
 
-The application is composed of two main components: a frontend web interface and a backend server.
+The application is composed of two main components: a React frontend and a Flask backend, connected via WebSocket.
 
-### 2.1. Frontend
+### 2.1. Frontend (React)
 
-*   **Technology:** HTML, CSS, JavaScript
+*   **Location:** `React/frontend/`
+*   **Technology:** React.js, JavaScript ES6+
 *   **Frameworks/Libraries:**
-    *   **Socket.IO Client:** For real-time communication with the backend.
-    *   **CryptoJS:** For client-side AES encryption and decryption of all message content.
-*   **Functionality:**
-    *   **User Interface:** A single-page application with a retro, terminal-like design.
-    *   **Login:** Users provide a username and a secret key to enter the chat.
-    *   **End-to-End Encryption:** Messages are encrypted in the browser before being sent to the server and decrypted upon receipt. The secret key never leaves the client.
+    *   **Socket.IO Client:** Real-time WebSocket communication with backend
+    *   **Web Crypto API:** Browser-native ECDH key exchange and AES-GCM encryption
+*   **Key Features:**
+    *   **Dynamic Backend Detection:** Automatically tries ports 5001-5010 for backend connection
+    *   **Terminal UI:** Retro green-on-black terminal aesthetic with ByteChat branding
+    *   **ECDH Key Exchange:** P-256 curve key pair generation for secure communication
+    *   **Real-time Messaging:** Instant message delivery with join/leave notifications
+    *   **Mobile Responsive:** Optimized for desktop and mobile browsers
 
-### 2.2. Backend
+### 2.2. Backend (Flask)
 
-*   **Technology:** Python
+*   **Technology:** Python 3.12+
 *   **Frameworks/Libraries:**
-    *   **Flask:** A micro web framework for serving the application and handling HTTP requests.
-    *   **Flask-SocketIO:** Manages the real-time WebSocket connections for the chat.
-*   **Functionality:**
-    *   **Real-time Messaging:** Relays encrypted messages between the two users in the chat room.
-    *   **Room Management:** Enforces a two-user limit per chat room and ensures unique usernames.
-    *   **Persistence:** Stores the encrypted message history in a **SQLite** database (`messages.db`).
+    *   **Flask:** Micro web framework for HTTP handling
+    *   **Flask-SocketIO:** WebSocket management for real-time communication
+    *   **SQLite3:** Message persistence and history storage
+*   **Key Features:**
+    *   **Auto-Port Selection:** Tries ports 5001-5010 to avoid conflicts
+    *   **Room Management:** Enforces two-user limit and unique usernames
+    *   **Message Relay:** Handles encrypted message broadcasting between users
+    *   **Join/Leave Notifications:** System messages for user presence updates
+    *   **Debug Logging:** Comprehensive logging for troubleshooting
 
-## 3. DevOps and Deployment Pipeline
+### 2.3. Automated Deployment
 
-The project is underpinned by a robust, automated CI/CD pipeline managed by Jenkins.
+*   **Technology:** Ansible
+*   **Location:** `ansible/playbook_start_bytechat.yml`
+*   **Features:**
+    *   **Failsafe Port Detection:** Automatically finds available ports for both services
+    *   **Virtual Environment Management:** Python dependency isolation with `.venv/`
+    *   **Service Orchestration:** Coordinated startup of React and Flask services
+    *   **One-Command Deployment:** `ansible-playbook ansible/playbook_start_bytechat.yml`
 
-### 3.1. Containerization
+## 3. Security Architecture
+
+### 3.1. Encryption System
+*   **Key Exchange:** Elliptic Curve Diffie-Hellman (ECDH) with P-256 curve
+*   **Message Encryption:** AES-GCM 256-bit authenticated encryption
+*   **Client-Side Only:** All cryptographic operations occur in the browser
+*   **No Key Transmission:** Private keys never leave the client
+*   **Plaintext Fallback:** Supports unencrypted mode for single-user scenarios
+
+### 3.2. Server Security
+*   **Message Relay Only:** Server never accesses plaintext message content
+*   **User Validation:** Username uniqueness and room capacity enforcement
+*   **Connection Security:** WebSocket with CORS support for secure communication
+
+## 4. DevOps and Deployment Pipeline
+
+The project includes both modern automated deployment (Ansible) and traditional CI/CD pipeline capabilities.
+
+### 4.1. Local Development (Ansible)
+
+*   **Technology:** Ansible playbooks
+*   **Deployment:** `ansible-playbook ansible/playbook_start_bytechat.yml`
+*   **Features:**
+    *   Automated React and Flask service startup
+    *   Virtual environment creation and dependency installation
+    *   Dynamic port detection and conflict resolution
+    *   Service health monitoring and logging
+
+### 4.2. Containerization
 
 *   **Technology:** Docker
 *   **Implementation:** The application is containerized using a multi-stage `Dockerfile` to create a lightweight and secure production image. The container runs as a non-root user to minimize security risks.
 
-### 3.2. CI/CD Pipeline
+### 4.3. CI/CD Pipeline
 
 *   **Orchestration:** Jenkins (`Jenkinsfile`)
 *   **Key Stages:**
@@ -54,11 +94,49 @@ The project is underpinned by a robust, automated CI/CD pipeline managed by Jenk
     7.  **Deployment:** Deploys the application to the Kubernetes cluster using a **Helm chart**.
     8.  **Cost Management:** Includes custom scripts to monitor GCP free tier usage before and after deployment to prevent unexpected costs.
 
-### 3.3. Deployment Environment
+### 4.4. Deployment Environment
 
 *   **Cloud Provider:** Google Cloud Platform (GCP)
 *   **Orchestration:** K3s (a lightweight Kubernetes distribution)
 *   **Package Management:** Helm
+
+## 5. Project Structure
+
+```
+.
+├── React/
+│   └── frontend/           # React.js frontend application
+│       ├── src/
+│       │   ├── App.js     # Main React component with messaging logic
+│       │   └── App.css    # Terminal-style CSS
+│       ├── public/        # Static React assets
+│       └── package.json   # Node.js dependencies
+├── ansible/
+│   ├── playbook_start_bytechat.yml  # Automated deployment script
+│   └── inventory          # Ansible inventory configuration
+├── helm/                  # Helm chart for Kubernetes deployment
+├── jenkins/               # Jenkinsfile for the CI/CD pipeline
+├── k8s/                   # (Optional) Manual Kubernetes manifests
+├── terraform/             # Terraform scripts for infrastructure provisioning
+├── app.py                 # Flask backend with SocketIO and SQLite
+├── index.html             # Legacy Flask-served frontend (deprecated)
+├── messages.db            # SQLite database for message persistence
+├── Dockerfile             # Docker configuration for containerizing the app
+├── requirements.txt       # Python dependencies
+├── .venv/                 # Python virtual environment (auto-created)
+└── README.md              # Project documentation
+```
+
+## 6. Communication Flow
+
+1. **User Access:** Users navigate to React frontend at `http://localhost:3000`
+2. **Backend Detection:** React app attempts connection to Flask backend on ports 5001-5010
+3. **Authentication:** Users enter username, React generates ECDH key pair
+4. **Room Join:** Flask validates user and room capacity, broadcasts join notification
+5. **Key Exchange:** (Optional) ECDH public keys exchanged for encryption setup
+6. **Messaging:** Users send messages, encrypted client-side (if 2 users), relayed by Flask
+7. **Real-time Updates:** All users receive messages and system notifications instantly
+8. **Persistence:** Flask stores message history in SQLite database
 
 ## 4. Project Structure
 

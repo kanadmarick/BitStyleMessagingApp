@@ -28,69 +28,103 @@ function App() {
 
   useEffect(() => {
     if (loggedIn) {
-      // Connect to backend (hard-coded URL)
-      socketRef.current = io('http://localhost:5001');
-
-      // Generate key pair
-      window.crypto.subtle.generateKey(
-        { name: 'ECDH', namedCurve: 'P-256' },
-        true,
-        ['deriveKey']
-      ).then(keyPair => {
-        keyPairRef.current = keyPair;
-        window.crypto.subtle.exportKey('jwk', keyPair.publicKey).then(publicKeyJwk => {
-          socketRef.current.emit('public_key', { key: publicKeyJwk });
+      // Try to connect to backend on multiple ports
+      const backendPorts = [5001, 5002, 5003, 5004, 5005, 5006, 5007, 5008, 5009, 5010];
+      let connected = false;
+      
+      const tryConnection = async (portIndex = 0) => {
+        if (portIndex >= backendPorts.length || connected) return;
+        
+        const port = backendPorts[portIndex];
+        console.log(`Trying to connect to backend on port ${port}`);
+        
+        socketRef.current = io(`http://localhost:${port}`, {
+          timeout: 2000,
+          forceNew: true
         });
-      });
+        
+        socketRef.current.on('connect', () => {
+          console.log(`Connected to backend on port ${port}`);
+          connected = true;
+          addMessage('System', `Connected to backend on port ${port}`);
+          
+          // Join the room immediately after connection
+          socketRef.current.emit('join', { username });
+          
+          // Set up message listeners after connection
+          socketRef.current.on('message', async function(data) {
+            if (sharedKey && data.iv && data.text) {
+              try {
+                const iv = new Uint8Array(atob(data.iv).split('').map(c => c.charCodeAt(0)));
+                const encryptedData = new Uint8Array(atob(data.text).split('').map(c => c.charCodeAt(0)));
+                const decryptedArrayBuffer = await window.crypto.subtle.decrypt(
+                  { name: 'AES-GCM', iv: iv },
+                  sharedKey,
+                  encryptedData
+                );
+                const decrypted = new TextDecoder().decode(decryptedArrayBuffer);
+                addMessage(data.username, decrypted, data.timestamp);
+              } catch (e) {
+                addMessage('System', 'Error decrypting message.');
+              }
+            } else if (data.text) {
+              addMessage(data.username, data.text, data.timestamp);
+            }
+          });
 
-      socketRef.current.on('public_key', async (data) => {
-        const remotePublicKey = await window.crypto.subtle.importKey(
-          'jwk',
-          data.key,
-          { name: 'ECDH', namedCurve: 'P-256' },
-          true,
-          []
-        );
-        const derivedKey = await window.crypto.subtle.deriveKey(
-          { name: 'ECDH', public: remotePublicKey },
-          keyPairRef.current.privateKey,
-          { name: 'AES-GCM', length: 256 },
-          true,
-          ['encrypt', 'decrypt']
-        );
-        setSharedKey(derivedKey);
-        addMessage('System', 'Secure connection established.');
-      });
+          socketRef.current.on('status', function(data) {
+            addMessage('System', data.msg);
+          });
 
-      socketRef.current.emit('join', { username });
-
-      socketRef.current.on('message', async function(data) {
-        if (!sharedKey) return;
-        try {
-          const iv = new Uint8Array(atob(data.iv).split('').map(c => c.charCodeAt(0)));
-          const encryptedData = new Uint8Array(atob(data.text).split('').map(c => c.charCodeAt(0)));
-          const decryptedArrayBuffer = await window.crypto.subtle.decrypt(
-            { name: 'AES-GCM', iv: iv },
-            sharedKey,
-            encryptedData
-          );
-          const decrypted = new TextDecoder().decode(decryptedArrayBuffer);
-          addMessage(data.username, decrypted, data.timestamp);
-        } catch (e) {
-          addMessage('System', 'Error decrypting message.');
-        }
-      });
-
-      socketRef.current.on('status', function(data) {
-        addMessage('System', data.msg);
-      });
+          socketRef.current.on('public_key', async (data) => {
+            const remotePublicKey = await window.crypto.subtle.importKey(
+              'jwk',
+              data.key,
+              { name: 'ECDH', namedCurve: 'P-256' },
+              true,
+              []
+            );
+            const derivedKey = await window.crypto.subtle.deriveKey(
+              { name: 'ECDH', public: remotePublicKey },
+              keyPairRef.current.privateKey,
+              { name: 'AES-GCM', length: 256 },
+              true,
+              ['encrypt', 'decrypt']
+            );
+            setSharedKey(derivedKey);
+            addMessage('System', 'Secure connection established.');
+          });
+          
+          // Generate key pair for encryption (optional for single user)
+          window.crypto.subtle.generateKey(
+            { name: 'ECDH', namedCurve: 'P-256' },
+            true,
+            ['deriveKey']
+          ).then(keyPair => {
+            keyPairRef.current = keyPair;
+            window.crypto.subtle.exportKey('jwk', keyPair.publicKey).then(publicKeyJwk => {
+              socketRef.current.emit('public_key', { key: publicKeyJwk });
+            });
+          });
+        });
+        
+        socketRef.current.on('connect_error', () => {
+          console.log(`Failed to connect to port ${port}`);
+          socketRef.current.disconnect();
+          setTimeout(() => tryConnection(portIndex + 1), 500);
+        });
+      };
+      
+      tryConnection(0);
 
       return () => {
-        socketRef.current.disconnect();
+        if (socketRef.current) {
+          socketRef.current.disconnect();
+        }
       };
     }
     // eslint-disable-next-line
-  }, [loggedIn, sharedKey]);
+  }, [loggedIn]); // Remove sharedKey dependency to avoid recreating listeners
 
   function addMessage(user, text, timestamp) {
     setMessages(msgs => [...msgs, { user, text, timestamp }]);
@@ -98,21 +132,22 @@ function App() {
 
   async function handleSend() {
     if (!input.trim()) return;
-    if (!sharedKey) {
-      addMessage('System', 'Cannot send message: secure connection not yet established.');
-      return;
-    }
-    const iv = window.crypto.getRandomValues(new Uint8Array(12));
-    const encodedText = new TextEncoder().encode(input);
-    const encryptedArrayBuffer = await window.crypto.subtle.encrypt(
-      { name: 'AES-GCM', iv: iv },
-      sharedKey,
-      encodedText
-    );
-    const encrypted = btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedArrayBuffer)));
-    const ivString = btoa(String.fromCharCode.apply(null, iv));
     const now = Date.now();
-    socketRef.current.emit('message', { username, text: encrypted, iv: ivString, timestamp: now });
+    if (sharedKey) {
+      const iv = window.crypto.getRandomValues(new Uint8Array(12));
+      const encodedText = new TextEncoder().encode(input);
+      const encryptedArrayBuffer = await window.crypto.subtle.encrypt(
+        { name: 'AES-GCM', iv: iv },
+        sharedKey,
+        encodedText
+      );
+      const encrypted = btoa(String.fromCharCode.apply(null, new Uint8Array(encryptedArrayBuffer)));
+      const ivString = btoa(String.fromCharCode.apply(null, iv));
+      socketRef.current.emit('message', { username, text: encrypted, iv: ivString, timestamp: now });
+    } else {
+      // Send plaintext if no sharedKey (single user mode)
+      socketRef.current.emit('message', { username, text: input, timestamp: now });
+    }
     setInput('');
   }
 
@@ -129,8 +164,9 @@ function App() {
         <form className="login" onSubmit={handleLogin} style={{ margin: '20px auto', background: '#000', border: '2px solid #00FF00', padding: 16, color: '#00FF00', maxWidth: 350 }}>
           <div style={{ textAlign: 'center', marginBottom: 20 }}>
             <canvas id="banner" width="280" height="48" style={{ display: 'block', margin: '0 auto' }}></canvas>
+            <div style={{ fontFamily: 'monospace', fontSize: 24, color: '#00FF00', marginTop: 8, letterSpacing: '2px', textShadow: '2px 2px #008800' }}>ByteChat</div>
           </div>
-          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="pixel-input" style={{ width: '100%', marginBottom: 12, padding: '16px 12px', background: '#000', color: '#00FF00', border: '1px solid #00FF00' }} />
+          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="pixel-input" style={{ width: '100%', marginBottom: 12, padding: '16px 12px', background: '#000', color: '#00FF00', border: '1px solid #00FF00', boxSizing: 'border-box' }} />
           <button type="submit" className="pixel-btn" style={{ width: '100%', padding: '16px 32px', background: '#000', color: '#00FF00', border: '1px solid #00FF00', marginTop: 16 }}>Login</button>
         </form>
       ) : (

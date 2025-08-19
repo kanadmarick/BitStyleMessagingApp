@@ -80,7 +80,15 @@ def handle_join(data):
     users.add(username)
     user_sid_map[sid] = username
     join_room(room)
-    emit('status', {'msg': f'{username} joined.'}, room=room)
+    
+    # Send join notification as a system message to all users in the room
+    join_timestamp = int(__import__('time').time() * 1000)  # Current timestamp in milliseconds
+    emit('message', {
+        'username': 'System', 
+        'text': f'{username} joined the chat', 
+        'timestamp': join_timestamp
+    }, room=room)
+    
     # Send message history to the user who joined
     messages = get_messages()
     socketio.emit('history', [
@@ -94,7 +102,15 @@ def handle_disconnect():
     if username and username in users:
         users.remove(username)
         del user_sid_map[sid]
-        emit('status', {'msg': f'{username} left.'}, room=room)
+        
+        # Send leave notification as a system message to remaining users
+        leave_timestamp = int(__import__('time').time() * 1000)  # Current timestamp in milliseconds
+        emit('message', {
+            'username': 'System', 
+            'text': f'{username} left the chat', 
+            'timestamp': leave_timestamp
+        }, room=room)
+        
         print(f'[BACKEND] {username} removed from room (sid={sid})')
 
 @socketio.on('message')
@@ -105,25 +121,18 @@ def handle_message(data):
         emit('status', {'msg': 'You are not in the room.'}, room=sid)
         disconnect(sid)
         return
-    encrypted = data.get('encrypted')
-    timestamp = data.get('timestamp')
     username = data.get('username')
-    if not (encrypted and timestamp and username):
+    timestamp = data.get('timestamp')
+    text = data.get('text')
+    if not (timestamp and username and text):
         emit('status', {'msg': 'Invalid message: missing fields.'}, room=sid)
         return
-    save_message(username, encrypted, timestamp)
-    emit('message', data, room=room)
+    save_message(username, text, timestamp)
+    emit('message', {'username': username, 'text': text, 'timestamp': timestamp}, room=room)
 
 @socketio.on('public_key')
 def handle_public_key(data):
-    sid = request.sid
-    if sid not in user_sid_map:
-        return  # Ignore if user not in room
-    # Relay the public key to the other user in the room
-    for other_sid, other_username in user_sid_map.items():
-        if other_sid != sid:
-            emit('public_key', data, room=other_sid)
-            break
+    pass  # Encryption/key exchange removed; do nothing
 
 if __name__ == '__main__':
     # Auto-port selection for different environments

@@ -1,0 +1,249 @@
+---
+# Ansible playbook for deploying ByteChat to GCP using containers
+- name: Deploy ByteChat to GCP with Docker containers
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    project_id: "{{ gcp_project_id | default('your-gcp-project-id') }}"
+    region: "{{ gcp_region | default('us-central1') }}"
+    zone: "{{ gcp_zone | default('us-central1-a') }}"
+    cluster_name: "bytechat-cluster"
+    service_name: "bytechat-service"
+    image_name: "gcr.io/{{ project_id }}/bytechat"
+    image_tag: "{{ build_number | default('latest') }}"
+    machine_type: "e2-micro"  # Free tier eligible
+    node_count: 1
+    app_port: 5001
+    service_port: 80
+    
+  tasks:
+    # Pre-deployment checks and setup
+    - name: Main deployment block
+      block:
+    - name: Check if gcloud is authenticated
+      shell: gcloud auth list --filter=status:ACTIVE --format="value(account)"
+      register: gcloud_auth_check
+      failed_when: gcloud_auth_check.stdout == ""
+      
+    - name: Set GCP project
+      shell: gcloud config set project {{ project_id }}
+      
+    - name: Enable required GCP APIs
+      shell: |
+        gcloud services enable compute.googleapis.com \
+        container.googleapis.com \
+        containerregistry.googleapis.com \
+        cloudbuild.googleapis.com
+      register: api_enable_result
+      changed_when: "'already enabled' not in api_enable_result.stderr"
+      
+    # Build and push Docker image
+    - name: Build ByteChat Docker image
+      shell: |
+        cd {{ ansible_env.PWD }}
+        docker build -t {{ image_name }}:{{ image_tag }} .
+      args:
+        chdir: "{{ ansible_env.PWD }}"
+        
+    - name: Configure Docker for GCR
+      shell: gcloud auth configure-docker --quiet
+      
+    - name: Push image to Google Container Registry
+      shell: docker push {{ image_name }}:{{ image_tag }}
+      
+    # Create GKE cluster
+    - name: Check if GKE cluster exists
+      shell: gcloud container clusters describe {{ cluster_name }} --zone={{ zone }}
+      register: cluster_check
+      failed_when: false
+      changed_when: false
+      
+    - name: Create GKE cluster (free tier)
+      shell: |
+        gcloud container clusters create {{ cluster_name }} \
+          --zone={{ zone }} \
+          --machine-type={{ machine_type }} \
+          --num-nodes={{ node_count }} \
+          --disk-size=10GB \
+          --enable-autorepair \
+          --enable-autoupgrade \
+          --no-enable-ip-alias \
+          --preemptible
+      when: cluster_check.rc != 0
+      register: cluster_creation
+      
+    - name: Get GKE cluster credentials
+      shell: gcloud container clusters get-credentials {{ cluster_name }} --zone={{ zone }}
+      
+    # Deploy application to Kubernetes
+    - name: Create Kubernetes namespace
+      k8s:
+        name: bytechat
+        api_version: v1
+        kind: Namespace
+        state: present
+        
+    - name: Deploy ByteChat to Kubernetes
+      k8s:
+        state: present
+        definition:
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: bytechat-deployment
+            namespace: bytechat
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: bytechat
+            template:
+              metadata:
+                labels:
+                  app: bytechat
+              spec:
+                containers:
+                - name: bytechat
+                  image: "{{ image_name }}:{{ image_tag }}"
+                  ports:
+                  - containerPort: 5000
+                  env:
+                  - name: PORT
+                    value: "5000"
+                  - name: FLASK_ENV
+                    value: "production"
+                  resources:
+                    requests:
+                      memory: "128Mi"
+                      cpu: "100m"
+                    limits:
+                      memory: "256Mi"
+                      cpu: "200m"
+                  readinessProbe:
+                    httpGet:
+                      path: /
+                      port: 5000
+                    initialDelaySeconds: 10
+                    periodSeconds: 5
+                  livenessProbe:
+                    httpGet:
+                      path: /
+                      port: 5000
+                    initialDelaySeconds: 30
+                    periodSeconds: 10
+                    
+    - name: Create Kubernetes Service (LoadBalancer)
+      k8s:
+        state: present
+        definition:
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: bytechat-service
+            namespace: bytechat
+          spec:
+            type: LoadBalancer
+            selector:
+              app: bytechat
+            ports:
+            - port: "{{ service_port }}"
+              targetPort: 5000
+              protocol: TCP
+              
+    # Wait for deployment and get external IP
+    - name: Wait for deployment to be ready
+      k8s_info:
+        api_version: apps/v1
+        kind: Deployment
+        name: bytechat-deployment
+        namespace: bytechat
+        wait_condition:
+          type: Available
+          status: "True"
+        wait_timeout: 300
+        
+    - name: Wait for LoadBalancer to get external IP
+      shell: |
+        for i in {1..60}; do
+          EXTERNAL_IP=$(kubectl get service bytechat-service -n bytechat -o jsonpath='{.status.loadBalancer.ingress[0].ip}')
+          if [ ! -z "$EXTERNAL_IP" ] && [ "$EXTERNAL_IP" != "<pending>" ]; then
+            echo $EXTERNAL_IP
+            exit 0
+          fi
+          sleep 10
+        done
+        echo "Timeout waiting for external IP"
+        exit 1
+      register: external_ip_result
+      
+    - name: Get service details
+      k8s_info:
+        api_version: v1
+        kind: Service
+        name: bytechat-service
+        namespace: bytechat
+      register: service_info
+      
+    - name: Display deployment information
+      debug:
+        msg:
+          - "=========================================="
+          - "ByteChat GCP Deployment Complete!"
+          - "=========================================="
+          - "GCP Project: {{ project_id }}"
+          - "GKE Cluster: {{ cluster_name }} ({{ zone }})"
+          - "Docker Image: {{ image_name }}:{{ image_tag }}"
+          - "External IP: {{ external_ip_result.stdout }}"
+          - "Access URL: http://{{ external_ip_result.stdout }}:{{ service_port }}"
+          - "=========================================="
+          - "Kubernetes Resources:"
+          - "- Namespace: bytechat"
+          - "- Deployment: bytechat-deployment (1 replica)"
+          - "- Service: bytechat-service (LoadBalancer)"
+          - "=========================================="
+          - "Management Commands:"
+          - "kubectl get pods -n bytechat"
+          - "kubectl logs -n bytechat deployment/bytechat-deployment"
+          - "kubectl get service -n bytechat"
+          - "=========================================="
+          
+    # Optional: Setup monitoring and logging
+    - name: Enable GKE monitoring
+      shell: |
+        gcloud container clusters update {{ cluster_name }} \
+          --zone={{ zone }} \
+          --enable-stackdriver-kubernetes
+      failed_when: false
+      
+      # Error handling and cleanup
+      rescue:
+        - name: Display error information
+      debug:
+        msg:
+          - "Deployment failed. Check the following:"
+          - "1. GCP authentication: gcloud auth list"
+          - "2. Project permissions: {{ project_id }}"
+          - "3. Required APIs enabled"
+          - "4. Docker daemon running"
+          - "5. kubectl configured"
+          
+    - name: Cleanup on failure (optional)
+      block:
+        - name: Delete failed deployment
+          k8s:
+            state: absent
+            api_version: apps/v1
+            kind: Deployment
+            name: bytechat-deployment
+            namespace: bytechat
+          failed_when: false
+          
+        - name: Delete service
+          k8s:
+            state: absent
+            api_version: v1
+            kind: Service
+            name: bytechat-service
+            namespace: bytechat
+          failed_when: false
+      when: cleanup_on_failure | default(false)

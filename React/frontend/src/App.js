@@ -38,6 +38,18 @@ function App() {
         const port = backendPorts[portIndex];
         console.log(`Trying to connect to backend on port ${port}`);
         
+        // Fetch message history
+        fetch(`http://localhost:${port}/history`)
+          .then(response => response.json())
+          .then(history => {
+            setMessages(history.map(msg => ({
+              user: msg.username,
+              text: msg.encrypted,
+              timestamp: msg.timestamp
+            })));
+          })
+          .catch(error => console.error('Error fetching history:', error));
+
         socketRef.current = io(`http://localhost:${port}`, {
           timeout: 2000,
           forceNew: true
@@ -159,30 +171,30 @@ function App() {
   }
 
   return (
-    <div className="App" style={{ background: '#000', color: '#00FF00', fontFamily: 'monospace', height: '100vh' }}>
+    <div className="App">
       {!loggedIn ? (
-        <form className="login" onSubmit={handleLogin} style={{ margin: '20px auto', background: '#000', border: '2px solid #00FF00', padding: 16, color: '#00FF00', maxWidth: 350 }}>
-          <div style={{ textAlign: 'center', marginBottom: 20 }}>
-            <canvas id="banner" width="280" height="48" style={{ display: 'block', margin: '0 auto' }}></canvas>
-            <div style={{ fontFamily: 'monospace', fontSize: 24, color: '#00FF00', marginTop: 8, letterSpacing: '2px', textShadow: '2px 2px #008800' }}>ByteChat</div>
+        <form className="login" onSubmit={handleLogin}>
+          <div>
+            <canvas id="banner" width="280" height="48"></canvas>
+            <div className="login-title">ByteChat</div>
           </div>
-          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="pixel-input" style={{ width: '100%', marginBottom: 12, padding: '16px 12px', background: '#000', color: '#00FF00', border: '1px solid #00FF00', boxSizing: 'border-box' }} />
-          <button type="submit" className="pixel-btn" style={{ width: '100%', padding: '16px 32px', background: '#000', color: '#00FF00', border: '1px solid #00FF00', marginTop: 16 }}>Login</button>
+          <input type="text" value={username} onChange={e => setUsername(e.target.value)} placeholder="Username" className="pixel-input" />
+          <button type="submit" className="pixel-btn">Login</button>
         </form>
       ) : (
-        <div className="chat-container" style={{ background: '#000', border: '2px solid #00FF00', height: '100vh', display: 'flex', flexDirection: 'column' }}>
-          <div className="messages" style={{ flex: 1, overflowY: 'auto', padding: 12, fontSize: 11, background: '#000', color: '#00FF00', borderBottom: '1px solid #00FF00' }}>
+        <div className="chat-container">
+          <div className="messages">
             {messages.map((msg, idx) => (
-              <div key={idx} style={{ marginBottom: 12, padding: '4px 8px', background: '#191970', border: '2px solid #FFD700', color: '#FFD700', boxShadow: '2px 2px #8B008B', fontSize: 13 }}>
-                <span style={{ display: 'inline-block', width: 16, height: 16, background: getUserColor(msg.user), borderRadius: 3, marginRight: 6 }}></span>
-                <strong style={{ color: '#00FFFF', marginRight: 8 }}>{msg.user}</strong>
-                <span style={{ color: '#aaa', fontSize: 10 }}>{formatTimestamp(msg.timestamp)}</span>: {msg.text}
+              <div key={idx} className="message">
+                <span className="user-avatar" style={{ backgroundColor: getUserColor(msg.user) }}></span>
+                <strong className="message-user">{msg.user}</strong>
+                <span className="message-timestamp">{formatTimestamp(msg.timestamp)}</span>: {msg.text}
               </div>
             ))}
           </div>
-          <div className="input-area" style={{ display: 'flex', alignItems: 'center', gap: 12, borderTop: '1px solid #00FF00', padding: 12, background: '#000' }}>
-            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Type a message..." style={{ flex: 1, fontFamily: 'monospace', fontSize: 13, background: '#000', color: '#00FF00', border: '1px solid #00FF00', padding: '12px 16px' }} />
-            <button onClick={handleSend} style={{ fontFamily: 'monospace', fontSize: 13, background: '#000', color: '#00FF00', border: '1px solid #00FF00', padding: '0 24px' }}>Send</button>
+          <div className="input-area">
+            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Type a message..." />
+            <button onClick={handleSend}>Send</button>
           </div>
         </div>
       )}

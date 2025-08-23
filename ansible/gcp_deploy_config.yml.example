@@ -1,0 +1,35 @@
+# GCP Deployment Configuration for ByteChat
+# Copy this file to gcp_deploy_config.yml and customize for your environment
+
+# GCP Project Configuration
+gcp_project_id: "your-gcp-project-id"  # Replace with your actual GCP project ID
+gcp_region: "us-central1"               # Free tier eligible region
+gcp_zone: "us-central1-a"               # Free tier eligible zone
+
+# Container Configuration
+build_number: "v1.0.0"                 # Version tag for Docker image
+cleanup_on_failure: true               # Whether to cleanup resources on deployment failure
+
+# Kubernetes Configuration
+replicas: 1                            # Number of pod replicas (keep at 1 for free tier)
+enable_monitoring: true                 # Enable GKE monitoring (may incur costs)
+enable_autoscaling: false               # Disable autoscaling for free tier
+
+# Network Configuration
+service_port: 80                        # External port for LoadBalancer
+enable_https: false                     # HTTPS support (requires domain and SSL cert)
+
+# Resource Limits (optimized for free tier)
+memory_request: "128Mi"
+memory_limit: "256Mi"
+cpu_request: "100m"
+cpu_limit: "200m"
+
+# Free Tier Optimizations
+preemptible_nodes: true                 # Use preemptible nodes for cost savings
+disk_size: "10GB"                       # Minimum disk size
+machine_type: "e2-micro"                # Free tier eligible machine type
+
+# Optional: Custom domain configuration
+# custom_domain: "bytechat.yourname.com"
+# ssl_cert_name: "bytechat-ssl-cert"

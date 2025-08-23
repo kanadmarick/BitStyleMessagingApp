@@ -1,0 +1,140 @@
+---
+# Ansible playbook for deploying ByteChat to GCP using containers
+- name: Deploy ByteChat to GCP with Docker containers
+  hosts: localhost
+  gather_facts: yes
+  vars:
+    project_id: "{{ gcp_project_id | default('your-gcp-project-id') }}"
+    region: "{{ gcp_region | default('us-central1') }}"
+    zone: "{{ gcp_zone | default('us-central1-a') }}"
+    cluster_name: "bytechat-cluster"
+    service_name: "bytechat-service"
+    image_name: "gcr.io/{{ project_id }}/bytechat"
+    image_tag: "{{ build_number | default('latest') }}"
+    machine_type: "e2-micro"
+    node_count: 1
+    app_port: 5001
+    service_port: 80
+    
+  tasks:
+    - name: Main deployment tasks
+      block:
+        - name: Check Docker daemon
+          shell: docker version
+          register: docker_check
+          failed_when: false
+          
+        - name: Fail if Docker not available
+          fail:
+            msg: "Docker is not available. Please start Docker and try again."
+          when: docker_check.rc != 0
+          
+        - name: Set GCP project
+          shell: gcloud config set project {{ project_id }}
+          
+        - name: Build Docker image using Dockerfile.gcp
+          shell: |
+            cd {{ ansible_env.PWD }}
+            docker build -f Dockerfile.gcp -t {{ image_name }}:{{ image_tag }} .
+          args:
+            chdir: "{{ ansible_env.PWD }}"
+            
+        - name: Configure Docker for GCR
+          shell: gcloud auth configure-docker --quiet
+          
+        - name: Push Docker image to GCR
+          shell: docker push {{ image_name }}:{{ image_tag }}
+          
+        - name: Check if GKE cluster exists
+          shell: gcloud container clusters describe {{ cluster_name }} --zone={{ zone }}
+          register: cluster_check
+          failed_when: false
+          
+        - name: Create GKE cluster if it doesn't exist
+          shell: |
+            gcloud container clusters create {{ cluster_name }} \
+              --zone={{ zone }} \
+              --machine-type={{ machine_type }} \
+              --num-nodes={{ node_count }} \
+              --enable-autorepair \
+              --enable-autoupgrade
+          when: cluster_check.rc != 0
+          
+        - name: Get cluster credentials
+          shell: gcloud container clusters get-credentials {{ cluster_name }} --zone={{ zone }}
+          
+        - name: Create namespace
+          shell: kubectl create namespace bytechat --dry-run=client -o yaml | kubectl apply -f -
+          
+        - name: Deploy application
+          shell: |
+            kubectl apply -f - <<EOF
+            apiVersion: apps/v1
+            kind: Deployment
+            metadata:
+              name: bytechat-deployment
+              namespace: bytechat
+            spec:
+              replicas: 1
+              selector:
+                matchLabels:
+                  app: bytechat
+              template:
+                metadata:
+                  labels:
+                    app: bytechat
+                spec:
+                  containers:
+                  - name: bytechat
+                    image: {{ image_name }}:{{ image_tag }}
+                    ports:
+                    - containerPort: 5000
+                    env:
+                    - name: FLASK_ENV
+                      value: "production"
+            EOF
+            
+        - name: Create LoadBalancer service
+          shell: |
+            kubectl apply -f - <<EOF
+            apiVersion: v1
+            kind: Service
+            metadata:
+              name: bytechat-service
+              namespace: bytechat
+            spec:
+              type: LoadBalancer
+              selector:
+                app: bytechat
+              ports:
+              - port: {{ service_port }}
+                targetPort: 5000
+                protocol: TCP
+            EOF
+          
+        - name: Wait for service to get external IP
+          shell: kubectl get service bytechat-service -n bytechat -o jsonpath='{.status.loadBalancer.ingress[0].ip}'
+          register: external_ip
+          until: external_ip.stdout != ""
+          retries: 20
+          delay: 15
+          
+        - name: Display deployment information
+          debug:
+            msg:
+              - "=========================================="
+              - "ByteChat Deployment Successful!"
+              - "=========================================="
+              - "External IP: {{ external_ip.stdout }}"
+              - "Access URL: http://{{ external_ip.stdout }}:{{ service_port }}"
+              - "=========================================="
+              
+      rescue:
+        - name: Display error information
+          debug:
+            msg:
+              - "Deployment failed. Check the following:"
+              - "1. GCP authentication: gcloud auth list"
+              - "2. Project permissions: {{ project_id }}"
+              - "3. Docker daemon running"
+              - "4. kubectl configured"

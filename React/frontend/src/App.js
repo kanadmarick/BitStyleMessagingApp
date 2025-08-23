@@ -25,6 +25,28 @@ function App() {
   const [sharedKey, setSharedKey] = useState(null);
   const socketRef = useRef(null);
   const keyPairRef = useRef(null);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Auto-scroll to bottom when new messages arrive
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  // Handle mobile keyboard visibility
+  useEffect(() => {
+    const handleResize = () => {
+      // Small delay to ensure keyboard is fully visible
+      setTimeout(scrollToBottom, 100);
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useEffect(() => {
     if (loggedIn) {
@@ -140,6 +162,8 @@ function App() {
 
   function addMessage(user, text, timestamp) {
     setMessages(msgs => [...msgs, { user, text, timestamp }]);
+    // Auto-scroll to bottom after adding message
+    setTimeout(scrollToBottom, 100);
   }
 
   async function handleSend() {
@@ -161,12 +185,38 @@ function App() {
       socketRef.current.emit('message', { username, text: input, timestamp: now });
     }
     setInput('');
+    // Keep focus on input for better mobile experience
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  }
+
+  function handleKeyDown(e) {
+    if (e.key === 'Enter') {
+      e.preventDefault(); // Prevent form submission on mobile
+      handleSend();
+    }
   }
 
   function handleLogin(e) {
     e.preventDefault();
     if (username.trim()) {
       setLoggedIn(true);
+      
+      // Add test messages to demonstrate alignment
+      setTimeout(() => {
+        addMessage('TestUser1', 'This message should appear on the left side', Date.now());
+        addMessage(username, 'This is your message and should appear on the right', Date.now() + 1000);
+        addMessage('TestUser1', 'Another message from someone else (left)', Date.now() + 2000);
+        addMessage(username, 'Another message from you (right)', Date.now() + 3000);
+      }, 1000);
+      
+      // Focus message input after login on mobile
+      setTimeout(() => {
+        if (inputRef.current) {
+          inputRef.current.focus();
+        }
+      }, 500);
     }
   }
 
@@ -185,16 +235,28 @@ function App() {
         <div className="chat-container">
           <div className="messages">
             {messages.map((msg, idx) => (
-              <div key={idx} className="message">
-                <span className="user-avatar" style={{ backgroundColor: getUserColor(msg.user) }}></span>
+              <div key={idx} className={`message ${msg.user === username ? 'own-message' : ''}`}>
                 <strong className="message-user">{msg.user}</strong>
-                <span className="message-timestamp">{formatTimestamp(msg.timestamp)}</span>: {msg.text}
+                <span className="message-text">{msg.text}</span>
+                <span className="message-timestamp">{formatTimestamp(msg.timestamp)}</span>
               </div>
             ))}
+            <div ref={messagesEndRef} />
           </div>
           <div className="input-area">
-            <input type="text" value={input} onChange={e => setInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSend()} placeholder="Type a message..." />
-            <button onClick={handleSend}>Send</button>
+            <input 
+              ref={inputRef}
+              type="text" 
+              value={input} 
+              onChange={e => setInput(e.target.value)} 
+              onKeyDown={handleKeyDown}
+              placeholder="Type a message..."
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck="false"
+            />
+            <button onClick={handleSend} disabled={!input.trim()}>Send</button>
           </div>
         </div>
       )}

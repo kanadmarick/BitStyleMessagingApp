@@ -2,6 +2,12 @@ body {
   background-color: #000;
   color: #00FF00;
   font-family: 'monospace', sans-serif;
+  /* Prevent zoom on input focus in iOS Safari */
+  -webkit-text-size-adjust: 100%;
+  /* Smooth scrolling for mobile */
+  scroll-behavior: smooth;
+  /* Prevent body scroll when chat is scrolling */
+  overflow: hidden;
 }
 
 .App {
@@ -38,6 +44,15 @@ body {
   color: #00FF00;
   border: 1px solid #00FF00;
   box-sizing: border-box;
+  /* Mobile optimizations */
+  font-size: 16px; /* Prevents zoom on iOS */
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  /* Touch-friendly minimum size */
+  min-height: 48px;
+  /* Improve touch precision */
+  touch-action: manipulation;
 }
 
 .pixel-btn {
@@ -49,11 +64,36 @@ body {
   margin-top: 16px;
   cursor: pointer;
   transition: background-color 0.3s, color 0.3s;
+  /* Mobile optimizations */
+  font-size: 16px; /* Prevents zoom on iOS */
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  /* Touch-friendly minimum size */
+  min-height: 48px;
+  /* Improve touch precision */
+  touch-action: manipulation;
+  /* Better button accessibility */
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .pixel-btn:hover {
   background-color: #00FF00;
   color: #000;
+}
+
+/* Touch devices: use :active instead of :hover */
+@media (hover: none) {
+  .pixel-btn:hover {
+    background-color: #000;
+    color: #00FF00;
+  }
+  
+  .pixel-btn:active {
+    background-color: #00FF00;
+    color: #000;
+  }
 }
 
 .chat-container {
@@ -73,18 +113,32 @@ body {
   background: #000;
   color: #00FF00;
   border-bottom: 1px solid #00FF00;
+  display: flex;
+  flex-direction: column;
+  /* Mobile scroll optimizations */
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+  /* Better scroll performance */
+  transform: translateZ(0);
 }
 
 .message {
   margin-bottom: 12px;
   padding: 4px 8px;
-  background: #191970;
-  border: 2px solid #FFD700;
-  color: #FFD700;
-  box-shadow: 2px 2px #8B008B;
   display: flex;
-  align-items: center;
+  flex-direction: column;
   animation: fadeIn 0.5s;
+  max-width: 60%;
+  word-wrap: break-word;
+}
+
+.message.own-message {
+  margin-left: auto;
+}
+
+.message:not(.own-message) {
+  align-self: flex-start;
+  align-items: flex-start;
 }
 
 @keyframes fadeIn {
@@ -96,12 +150,8 @@ body {
   }
 }
 
-.user-avatar {
-  display: inline-block;
-  width: 16px;
-  height: 16px;
-  border-radius: 3px;
-  margin-right: 6px;
+.message-text {
+  margin-bottom: 4px;
 }
 
 .message-user {
@@ -128,22 +178,36 @@ body {
 .input-area input {
   flex: 1;
   font-family: 'monospace', sans-serif;
-  font-size: 13px;
+  font-size: 16px; /* Prevents zoom on iOS */
   background: #000;
   color: #00FF00;
   border: 1px solid #00FF00;
   padding: 12px 16px;
+  /* Mobile optimizations */
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  min-height: 48px;
+  touch-action: manipulation;
 }
 
 .input-area button {
   font-family: 'monospace', sans-serif;
-  font-size: 13px;
+  font-size: 16px; /* Prevents zoom on iOS */
   background: #000;
   color: #00FF00;
   border: 1px solid #00FF00;
   padding: 12px 24px;
   cursor: pointer;
   transition: background-color 0.3s, color 0.3s;
+  /* Mobile optimizations */
+  -webkit-appearance: none;
+  appearance: none;
+  border-radius: 0;
+  min-height: 48px;
+  touch-action: manipulation;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .input-area button:hover {
@@ -151,31 +215,139 @@ body {
   color: #000;
 }
 
+/* Touch devices: use :active instead of :hover */
+@media (hover: none) {
+  .input-area button:hover {
+    background-color: #000;
+    color: #00FF00;
+  }
+  
+  .input-area button:active {
+    background-color: #00FF00;
+    color: #000;
+  }
+}
+
+/* Disabled button state */
+.input-area button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #000;
+  color: #666;
+  border-color: #666;
+}
+
+.input-area button:disabled:hover,
+.input-area button:disabled:active {
+  background-color: #000;
+  color: #666;
+  border-color: #666;
+}
+
 @media (max-width: 600px) {
   .login {
-    width: 90%;
-    padding: 12px;
+    width: 95%;
+    padding: 16px;
+    margin: 10px auto;
   }
 
   .login-title {
-    font-size: 20px;
+    font-size: 18px;
+    margin-top: 12px;
   }
 
   .pixel-input, .pixel-btn {
-    padding: 12px;
+    padding: 16px 12px;
+    font-size: 16px; /* Maintain 16px to prevent zoom */
   }
 
   .messages {
+    font-size: 14px;
+    padding: 8px;
+  }
+
+  .message {
+    margin-bottom: 8px;
+    padding: 8px 12px;
+    max-width: 85%; /* More space for mobile */
+  }
+
+  .input-area {
+    padding: 12px;
+    gap: 12px;
+  }
+
+  .input-area input, .input-area button {
+    padding: 16px 12px;
+    font-size: 16px; /* Maintain 16px to prevent zoom */
+    min-height: 48px;
+  }
+
+  /* Better touch targets on mobile */
+  .input-area button {
+    min-width: 80px;
+    flex-shrink: 0;
+  }
+}
+
+/* Extra small screens (phones in portrait) */
+@media (max-width: 480px) {
+  .login {
+    width: 98%;
+    padding: 12px;
+    margin: 5px auto;
+  }
+
+  .login-title {
+    font-size: 16px;
+  }
+
+  .messages {
+    font-size: 13px;
+    padding: 6px;
+  }
+
+  .message {
+    max-width: 90%;
+    padding: 6px 10px;
+  }
+
+  .message-user {
     font-size: 12px;
+  }
+
+  .message-timestamp {
+    font-size: 9px;
   }
 
   .input-area {
     padding: 8px;
     gap: 8px;
   }
+}
 
-  .input-area input, .input-area button {
-    padding: 10px;
-    font-size: 12px;
+/* Landscape orientation optimizations */
+@media (max-height: 500px) and (orientation: landscape) {
+  .login {
+    max-width: 400px;
+    padding: 8px;
+  }
+
+  .login-title {
+    font-size: 14px;
+    margin-top: 4px;
+  }
+
+  .pixel-input, .pixel-btn {
+    padding: 12px;
+    margin-bottom: 8px;
+  }
+
+  .messages {
+    padding: 6px;
+  }
+
+  .input-area {
+    padding: 6px;
   }
 }

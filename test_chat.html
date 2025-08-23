@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Chat Alignment Test</title>
+    <style>
+        .messages {
+            display: flex;
+            flex-direction: column;
+            padding: 20px;
+            background: #000;
+            color: #00FF00;
+            font-family: monospace;
+            height: 400px;
+            border: 2px solid #00FF00;
+        }
+        .message {
+            margin-bottom: 12px;
+            padding: 8px 12px;
+            max-width: 60%;
+            word-wrap: break-word;
+            background: #111;
+            border: 1px solid #00FF00;
+        }
+        .message.own-message {
+            margin-left: auto;
+            background: #003300;
+        }
+        .message:not(.own-message) {
+            margin-right: auto;
+            background: #000033;
+        }
+    </style>
+</head>
+<body>
+    <h1>Chat Alignment Test</h1>
+    <div class="messages">
+        <div class="message">
+            <strong>User1:</strong> This is a message from user 1 (should be on left)
+        </div>
+        <div class="message own-message">
+            <strong>You:</strong> This is your message (should be on right)
+        </div>
+        <div class="message">
+            <strong>User1:</strong> Another message from user 1 (left side)
+        </div>
+        <div class="message own-message">
+            <strong>You:</strong> Another message from you (right side)
+        </div>
+    </div>
+</body>
+</html>

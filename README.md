@@ -6,15 +6,17 @@ Secure, real-time messaging with client-side ECDH key exchange, AES encryption, 
 **Key Features:**
 - 🔐 **Security**: ECDH Key Exchange + AES-GCM End-to-End Encryption
 - ⚛️ **Frontend**: Modern React with Dynamic Backend Detection
-- 📱 **UI/UX**: Mobile-Optimized Retro Terminal Interface  
-- 💻 **Design**: Matrix/ByteChat Terminal Aesthetic
+- 📱 **Mobile-First**: Touch-optimized UI with 16px fonts, responsive breakpoints
+- 💻 **Design**: Matrix/ByteChat Terminal Aesthetic with PWA support
 - ⚡ **Real-Time**: WebSocket Communication with Socket.IO
 - 👥 **Rooms**: Two-User Limit with Join/Leave Notifications
-- 💾 **Persistence**: SQLite Message Storage
+- 💾 **Persistence**: SQLite Message Storage with usage analytics
+- 📊 **Observability**: Complete Prometheus + Grafana monitoring stack
+- 🔍 **Metrics**: Custom application metrics and system monitoring
+- 🚨 **Alerting**: Multi-channel notifications (Email, Slack, Discord)
 - 🤖 **Automation**: Ansible-Based Local & GCP Deployment
 - 🔧 **Reliability**: Failsafe Port Detection (5001-5010 range)
 - 🧪 **Testing**: Comprehensive Test Suite with Validation
-- 📊 **Monitoring**: Detailed Backend Logging & Health Checks
 - 🚀 **CI/CD**: Jenkins Pipeline with GCP Integration
 - 🐳 **Containers**: Multi-stage Docker builds (React + Flask)
 - ☸️ **Kubernetes**: GKE deployment with LoadBalancer
@@ -50,6 +52,17 @@ cd React/frontend
 npm start
 ```
 
+### Option 4: Complete Monitoring Stack
+```bash
+# Start the full observability stack
+./start_monitoring_stack.sh
+
+# Access monitoring services:
+# - Grafana: http://localhost:3000 (admin/admin)
+# - Prometheus: http://localhost:9090
+# - Flask App Metrics: http://localhost:5003/metrics
+```
+
 ---
 
 ## 🏗️ Architecture Overview
@@ -66,13 +79,39 @@ npm start
 
 ### Backend (Flask)
 - **Location**: `app.py`
-- **Technology**: Flask + Flask-SocketIO
+- **Technology**: Flask + Flask-SocketIO + Prometheus
 - **Features**:
   - Auto-port selection (5001-5010) to avoid conflicts
   - Two-user room management with overflow handling
   - Message persistence with SQLite database
   - Join/leave notifications as system messages
+  - Prometheus metrics endpoint (`/metrics`)
+  - Health check endpoint (`/health`)
   - Comprehensive debug logging for troubleshooting
+
+### Monitoring Stack
+- **Location**: `docker-compose.monitoring.yml`
+- **Components**:
+  - **Prometheus** (Port 9090): Metrics collection and querying
+  - **Grafana** (Port 3000): Visualization dashboards
+  - **Node Exporter** (Port 9100): System metrics (CPU, memory, disk)
+  - **cAdvisor** (Port 8081): Container metrics
+  - **Jenkins** (Port 8080): CI/CD with monitoring integration
+- **Custom Metrics**:
+  - `messages_total`: Total messages in database
+  - `active_users`: Current connected users
+  - `database_size_bytes`: SQLite database file size
+  - `app_uptime_seconds`: Application runtime
+  - `http_request_duration_seconds`: Response time histogram
+
+### Notification System
+- **Location**: `notification_manager.py`
+- **Channels**: Email, Slack, Discord
+- **Features**: HTML formatting, severity levels, rate limiting
+
+### Analytics Dashboard
+- **Location**: `gcp_analytics.py`
+- **Features**: Usage patterns, peak hours analysis, user engagement metrics
 
 ### DevOps Automation
 - **Location**: `devops_automation.py`

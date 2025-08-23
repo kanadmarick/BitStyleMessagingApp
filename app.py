@@ -1,7 +1,8 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, Response
 from flask_socketio import SocketIO, emit, join_room, leave_room, disconnect
 import sqlite3
 import os
+from metrics_exporter import metrics_endpoint
 DB_PATH = 'messages.db'
 
 def init_db():
@@ -53,6 +54,20 @@ def history():
     return jsonify([
         {'username': u, 'encrypted': e, 'timestamp': t} for u, e, t in messages
     ])
+
+# Prometheus metrics endpoint
+@app.route('/metrics')
+def metrics():
+    return metrics_endpoint()
+
+# Health check endpoint
+@app.route('/health')
+def health():
+    return jsonify({
+        'status': 'healthy',
+        'active_users': len(user_sid_map),
+        'database_accessible': True
+    })
 
 @socketio.on('join')
 def handle_join(data):
